@@ -1,9 +1,12 @@
 import asyncio
+import os
+
 from aiogram import Bot, Dispatcher
 
 from handlers import deposit, registration, start, withdraw, profile
 
-TOKEN = "8341289452:AAFwp03zCUUB_g_BsCfoBahsJoKQIwSoBjE"
+# Токен только из окружения. Прежний токен был в git-истории и считается скомпрометированным.
+TOKEN = os.environ["BOT_TOKEN"]
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
