@@ -1,0 +1,30 @@
+# Секреты и окружение
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node (admin)
+node_modules/
+dist/
+
+# Данные и бэкапы
+*.sql
+*.dump
+backups/
+pgdata/
+
+# IDE / ОС
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
