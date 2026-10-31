@@ -16,13 +16,6 @@ async def start_handler(message: Message):
                 style="success"
             )
         ],
-        [
-            InlineKeyboardButton(
-                text=" 2️⃣ Регистрация в кассе",
-                callback_data="open_cash",
-                style="primary"
-            )
-        ]
     ])
 
     await message.answer(
