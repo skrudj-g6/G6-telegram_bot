@@ -135,6 +135,7 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_deposit_requests_user_id"), table_name="deposit_requests")
     op.drop_table("deposit_requests")
     op.drop_table("app_settings")
-    # batch: SQLite не умеет DROP COLUMN во всех версиях; в PostgreSQL это обычный ALTER.
-    with op.batch_alter_table("users") as batch:
+    # recreate="never": обычный ALTER ... DROP COLUMN (SQLite 3.35+ и PostgreSQL),
+    # без пересоздания таблицы users вместе с её ограничениями и ссылками.
+    with op.batch_alter_table("users", recreate="never") as batch:
         batch.drop_column("block_reason")

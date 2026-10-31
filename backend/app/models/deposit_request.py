@@ -60,8 +60,12 @@ class DepositRequest(Base):
     # Какой игровой аккаунт пополняется (на момент создания заявки).
     poker_account_id: Mapped[int] = mapped_column(ForeignKey("poker_accounts.id"))
     method: Mapped[str] = mapped_column(String(16))
-    # Целые тенге (ТЗ §2).
+    # Целые тенге (ТЗ §2). Для крипты — эквивалент введённой суммы USDT по курсу заявки.
     amount: Mapped[int] = mapped_column(BigInteger)
+    # Только для crypto: сумма USDT в сотых (1 USDT = 100) и курс на момент создания
+    # (тенге за 1 USDT, строкой). Курс фиксируется: позже он на заявку не влияет.
+    crypto_amount: Mapped[int | None] = mapped_column(BigInteger)
+    exchange_rate: Mapped[str | None] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(
         String(20),
         default=DepositStatus.AWAITING_RECEIPT,

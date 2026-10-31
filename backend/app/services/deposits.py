@@ -11,6 +11,7 @@
 
 import logging
 from datetime import datetime, timedelta, timezone
+from decimal import ROUND_DOWN, Decimal
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -31,6 +32,49 @@ from app.services.errors import ServiceError
 logger = logging.getLogger(__name__)
 
 LIST_LIMIT = 20
+MAX_USDT = Decimal("1000000000")
+
+
+def _fmt(value: Decimal) -> str:
+    """Decimal → строка без экспоненты и лишних нулей: Decimal('5E+2') → '500'."""
+    return format(value.normalize(), "f")
+
+
+def format_usdt(cents: int) -> str:
+    return f"{cents // 100}.{cents % 100:02d}"
+
+
+def _normalize_usdt(value: Decimal | None) -> Decimal:
+    """Сумма USDT: положительная, не более двух знаков после запятой."""
+    if value is None or not value.is_finite() or value <= 0 or value > MAX_USDT:
+        raise ServiceError("invalid_amount")
+    if value.as_tuple().exponent < -2:
+        raise ServiceError("invalid_amount")
+    return value
+
+
+def usdt_to_kzt(usdt: Decimal, rate: Decimal) -> int:
+    """Эквивалент в целых тенге. Дробная часть отбрасывается (в пользу клуба)."""
+    return int((usdt * rate).to_integral_value(rounding=ROUND_DOWN))
+
+
+def quote_usdt(db: Session, usdt_amount: Decimal | None) -> dict:
+    """Сколько тенге получится за введённые USDT (бот показывает это до подтверждения)."""
+    usdt = _normalize_usdt(usdt_amount)
+    rate = app_settings.get_usdt_rate(db)
+    if rate is None:
+        raise ServiceError("exchange_rate_unavailable")
+    kzt = usdt_to_kzt(usdt, rate)
+    minimum = app_settings.get_int(db, "deposit_min_amount")
+    maximum = app_settings.get_int(db, "deposit_max_amount")
+    return {
+        "usdt_amount": format_usdt(int(usdt * 100)),
+        "rate": _fmt(rate),
+        "kzt_amount": kzt,
+        "min": minimum,
+        "max": maximum,
+        "within_limits": minimum <= kzt <= maximum,
+    }
 
 
 def _utcnow() -> datetime:
@@ -154,11 +198,17 @@ def create_deposit(
     *,
     telegram_id: int,
     method: str,
-    amount: int,
+    amount: int | None = None,
+    usdt_amount: Decimal | None = None,
     idempotency_key: str,
     now: datetime | None = None,
 ) -> tuple[DepositRequest, bool]:
-    """Создаёт заявку и выдаёт реквизиты. Возвращает (заявка, создана_ли_сейчас)."""
+    """Создаёт заявку и выдаёт реквизиты. Возвращает (заявка, создана_ли_сейчас).
+
+    fiat: игрок вводит `amount` (тенге). crypto: игрок вводит `usdt_amount`, а сумма
+    в тенге считается по курсу из настроек; курс сохраняется в заявке. Лимиты
+    проверяются по сумме в тенге в обоих случаях.
+    """
     now = now or _utcnow()
     user = _active_user(db, telegram_id)
 
@@ -178,10 +228,29 @@ def create_deposit(
     if method not in DepositMethod.ALL:
         raise ServiceError("invalid_method")
 
+    usdt: Decimal | None = None
+    crypto_cents: int | None = None
+    rate_text: str | None = None
+    if method == DepositMethod.FIAT:
+        if amount is None or usdt_amount is not None:
+            raise ServiceError("invalid_amount")
+        amount_kzt = amount
+    else:
+        if usdt_amount is None or amount is not None:
+            raise ServiceError("invalid_amount")
+        usdt = _normalize_usdt(usdt_amount)
+        rate = app_settings.get_usdt_rate(db)
+        if rate is None:
+            raise ServiceError("exchange_rate_unavailable")
+        amount_kzt = usdt_to_kzt(usdt, rate)
+        crypto_cents = int(usdt * 100)
+        rate_text = _fmt(rate)
+
     minimum = app_settings.get_int(db, "deposit_min_amount")
     maximum = app_settings.get_int(db, "deposit_max_amount")
-    if not minimum <= amount <= maximum:
-        raise ServiceError("amount_out_of_range", min=minimum, max=maximum)
+    if not minimum <= amount_kzt <= maximum:
+        extra = {"amount_kzt": amount_kzt} if method == DepositMethod.CRYPTO else {}
+        raise ServiceError("amount_out_of_range", min=minimum, max=maximum, **extra)
 
     # Просроченные заявки игрока закрываем сразу: они не должны мешать новой.
     for request_id in db.scalars(
@@ -200,7 +269,7 @@ def create_deposit(
     ):
         raise ServiceError("deposit_awaiting_receipt")
 
-    details = requisites.get_provider().reserve(method, amount)
+    details = requisites.get_provider().reserve(method, amount_kzt, usdt_amount=usdt)
     if details is None:
         raise ServiceError("no_requisites_available")
 
@@ -209,7 +278,9 @@ def create_deposit(
         user_id=user.id,
         poker_account_id=account.id,
         method=method,
-        amount=amount,
+        amount=amount_kzt,
+        crypto_amount=crypto_cents,
+        exchange_rate=rate_text,
         status=DepositStatus.AWAITING_RECEIPT,
         payment_details=details,
         idempotency_key=idempotency_key,

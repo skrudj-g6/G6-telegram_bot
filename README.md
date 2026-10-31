@@ -22,13 +22,14 @@
 | Метод | Путь | Назначение |
 |---|---|---|
 | GET | `/bot/v1/settings/limits` | Лимиты сумм (настраиваются в панели) |
-| POST | `/bot/v1/users/{telegram_id}/deposits` | Создать заявку `{method: fiat/crypto, amount, idempotency_key}`; 201 новая, 200 повтор |
+| GET | `/bot/v1/quotes/usdt-deposit?usdt_amount=10` | Сколько тенге за введённые USDT (до подтверждения) |
+| POST | `/bot/v1/users/{telegram_id}/deposits` | Создать заявку: fiat `{method, amount, idempotency_key}` (тенге) или crypto `{method, usdt_amount, idempotency_key}` (USDT); 201 новая, 200 повтор |
 | GET | `/bot/v1/users/{telegram_id}/deposits` | «Мои заявки» |
 | GET | `/bot/v1/users/{telegram_id}/deposits/{id}` | Одна заявка |
 | POST | `/bot/v1/users/{telegram_id}/deposits/{id}/receipt` | Чек (multipart `file`: JPEG, PNG, PDF до 10 МБ) |
 | POST | `/bot/v1/users/{telegram_id}/deposits/{id}/cancel` | Отмена, только до чека |
 
-Пока платёжка не подключена, создание заявки отвечает 503 `no_requisites_available`. Игрок, который попытался привязать уже занятый игровой ID, блокируется (403 `user_blocked` на все запросы).
+Пока платёжка не подключена, создание заявки отвечает 503 `no_requisites_available`. Для crypto нужен курс USDT в `app_settings` (`usdt_kzt_rate`), иначе 503 `exchange_rate_unavailable`. Игрок, второй раз попытавшийся привязать уже занятый игровой ID, блокируется (403 `user_blocked` на все запросы); первая попытка — предупреждение.
 
 Ошибки: `{"detail": {"code": "..."}}`, коды — `invalid_player_id` (422), `player_id_taken` и `account_locked` (409), `user_not_found` (404), `user_blocked` (403), `unauthorized` (401).
 Подтверждение/отклонение игрока админом реализовано в сервисе, HTTP-эндпоинты появятся на этапе 5 (с авторизацией сотрудников).

@@ -59,10 +59,12 @@ class FakeRequisitesProvider:
     """Тестовая «платёжка»: выдаёт реквизиты, запоминает обращения."""
 
     def __init__(self):
-        self.calls = []
+        self.calls = []  # (способ, сумма в тенге)
+        self.usdt_amounts = []  # сумма USDT для crypto, None для fiat
 
-    def reserve(self, method, amount):
+    def reserve(self, method, amount, usdt_amount=None):
         self.calls.append((method, amount))
+        self.usdt_amounts.append(usdt_amount)
         return {"bank": "Тестовый банк", "card": "0000 0000 0000 0000", "method": method}
 
 
@@ -74,6 +76,16 @@ def provider(monkeypatch):
     fake = FakeRequisitesProvider()
     monkeypatch.setattr(requisites, "_provider", fake)
     return fake
+
+
+@pytest.fixture
+def usdt_rate(db):
+    """Владелец задал курс в панели: 1 USDT = 500.50 тенге. Без фикстуры курса нет."""
+    from app.models import AppSetting
+
+    db.add(AppSetting(key="usdt_kzt_rate", value="500.50"))
+    db.commit()
+    return "500.50"
 
 
 @pytest.fixture(autouse=True)

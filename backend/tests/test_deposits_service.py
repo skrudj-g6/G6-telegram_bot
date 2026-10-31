@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -22,7 +23,12 @@ def approved_player(db, tg=1, player_id="1234-5678"):
     return tg
 
 
-def create(db, tg=1, amount=5000, method="fiat", key="key-00000001", now=T0):
+def create(db, tg=1, amount=5000, method="fiat", key="key-00000001", now=T0, usdt=None):
+    """fiat: сумма в тенге (`amount`); crypto: количество USDT (`usdt`)."""
+    if method == "crypto":
+        return deposits.create_deposit(
+            db, telegram_id=tg, method=method, usdt_amount=usdt, idempotency_key=key, now=now
+        )
     return deposits.create_deposit(
         db, telegram_id=tg, method=method, amount=amount, idempotency_key=key, now=now
     )
@@ -66,12 +72,144 @@ def test_create_gives_requisites_and_waits_for_receipt(db, provider):
     ]
 
 
-def test_both_methods_are_supported(db, provider):
+def test_both_methods_are_supported(db, provider, usdt_rate):
     approved_player(db)
     fiat, _ = create(db, method="fiat", key="key-fiat-0001")
     deposits.cancel_deposit(db, telegram_id=1, request_id=fiat.id)
-    crypto, _ = create(db, method="crypto", key="key-crypto-001")
+    crypto, _ = create(db, method="crypto", usdt=Decimal("10"), key="key-crypto-001")
     assert crypto.method == "crypto"
+
+
+# ---------- крипта: сумма вводится в USDT, тенге считаются по курсу ----------
+
+
+def test_crypto_amount_is_converted_by_rate_and_rate_is_stored(db, provider, usdt_rate):
+    approved_player(db)
+    request, _ = create(db, method="crypto", usdt=Decimal("10"))
+    assert request.amount == 5005  # 10 × 500.50
+    assert request.crypto_amount == 1000  # 10.00 USDT в сотых
+    assert request.exchange_rate == "500.5"
+    assert provider.calls == [("crypto", 5005)]
+    assert provider.usdt_amounts == [Decimal("10")]  # платёжке передаётся и USDT
+
+
+def test_fiat_request_has_no_crypto_fields(db, provider):
+    approved_player(db)
+    request, _ = create(db)
+    assert (request.crypto_amount, request.exchange_rate) == (None, None)
+    assert provider.usdt_amounts == [None]
+
+
+def test_fractional_tenge_are_rounded_down(db, provider, usdt_rate):
+    approved_player(db)
+    request, _ = create(db, method="crypto", usdt=Decimal("12.34"))
+    assert request.amount == 6176  # 12.34 × 500.50 = 6176.17
+    assert request.crypto_amount == 1234
+
+
+def test_rate_change_does_not_affect_existing_request(db, provider, usdt_rate):
+    from app.models import AppSetting
+
+    approved_player(db)
+    request, _ = create(db, method="crypto", usdt=Decimal("10"))
+    db.get(AppSetting, "usdt_kzt_rate").value = "600"
+    db.commit()
+    reloaded = deposits._load(db, request.id)
+    assert (reloaded.amount, reloaded.exchange_rate) == (5005, "500.5")
+
+
+def test_crypto_is_unavailable_until_owner_sets_the_rate(db, provider):
+    """Курса по умолчанию нет: выдуманный курс недопустим."""
+    approved_player(db)
+    with pytest.raises(ServiceError) as exc:
+        create(db, method="crypto", usdt=Decimal("10"))
+    assert code_of(exc) == "exchange_rate_unavailable"
+    assert db.scalars(select(DepositRequest)).all() == []
+    assert provider.calls == []
+
+
+@pytest.mark.parametrize("bad_rate", ["", "abc", "0", "-5", "NaN", "Infinity"])
+def test_invalid_rate_in_settings_is_treated_as_missing(db, provider, bad_rate):
+    from app.models import AppSetting
+
+    db.add(AppSetting(key="usdt_kzt_rate", value=bad_rate))
+    db.commit()
+    approved_player(db)
+    with pytest.raises(ServiceError) as exc:
+        create(db, method="crypto", usdt=Decimal("10"))
+    assert code_of(exc) == "exchange_rate_unavailable"
+
+
+@pytest.mark.parametrize(
+    "usdt", [None, Decimal("0"), Decimal("-1"), Decimal("1.234"), Decimal("NaN"), Decimal("1E+10")]
+)
+def test_invalid_usdt_amount_is_refused(db, provider, usdt_rate, usdt):
+    approved_player(db)
+    with pytest.raises(ServiceError) as exc:
+        create(db, method="crypto", usdt=usdt)
+    assert code_of(exc) == "invalid_amount"
+    assert provider.calls == []
+
+
+def test_amount_fields_must_match_the_method(db, provider, usdt_rate):
+    approved_player(db)
+    with pytest.raises(ServiceError) as exc:  # fiat с USDT
+        deposits.create_deposit(
+            db, telegram_id=1, method="fiat", amount=5000, usdt_amount=Decimal("10"),
+            idempotency_key="key-00000001", now=T0,
+        )
+    assert code_of(exc) == "invalid_amount"
+    with pytest.raises(ServiceError) as exc:  # crypto с тенге
+        deposits.create_deposit(
+            db, telegram_id=1, method="crypto", amount=5000, usdt_amount=Decimal("10"),
+            idempotency_key="key-00000001", now=T0,
+        )
+    assert code_of(exc) == "invalid_amount"
+    with pytest.raises(ServiceError) as exc:  # fiat без суммы
+        deposits.create_deposit(
+            db, telegram_id=1, method="fiat", idempotency_key="key-00000001", now=T0
+        )
+    assert code_of(exc) == "invalid_amount"
+    assert db.scalars(select(DepositRequest)).all() == []
+
+
+def test_limits_apply_to_tenge_equivalent_of_usdt(db, provider, usdt_rate):
+    approved_player(db)
+    with pytest.raises(ServiceError) as exc:  # 1 USDT = 500.5 ₸ < 1000
+        create(db, method="crypto", usdt=Decimal("1"))
+    assert code_of(exc) == "amount_out_of_range"
+    assert exc.value.extra == {"min": 1000, "max": 2_000_000, "amount_kzt": 500}
+
+    with pytest.raises(ServiceError) as exc:  # 4000 USDT = 2 002 000 ₸ > 2 000 000
+        create(db, method="crypto", usdt=Decimal("4000"))
+    assert exc.value.extra["amount_kzt"] == 2_002_000
+
+    assert create(db, method="crypto", usdt=Decimal("2"))[0].amount == 1001  # 2 × 500.5
+
+
+def test_quote_shows_tenge_before_confirmation(db, usdt_rate):
+    quote = deposits.quote_usdt(db, Decimal("10"))
+    assert quote == {
+        "usdt_amount": "10.00",
+        "rate": "500.5",
+        "kzt_amount": 5005,
+        "min": 1000,
+        "max": 2_000_000,
+        "within_limits": True,
+    }
+    assert deposits.quote_usdt(db, Decimal("1"))["within_limits"] is False
+
+
+def test_quote_without_rate_is_unavailable(db):
+    with pytest.raises(ServiceError) as exc:
+        deposits.quote_usdt(db, Decimal("10"))
+    assert code_of(exc) == "exchange_rate_unavailable"
+
+
+def test_format_usdt():
+    assert deposits.format_usdt(1000) == "10.00"
+    assert deposits.format_usdt(1234) == "12.34"
+    assert deposits.format_usdt(5) == "0.05"
 
 
 def test_unknown_method_is_refused(db, provider):

@@ -38,6 +38,7 @@ def upload(client, headers, request_id, data=JPEG, name="check.jpg", tg=100):
 def test_endpoints_require_service_token(client, player):
     calls = [
         client.get("/bot/v1/settings/limits"),
+        client.get("/bot/v1/quotes/usdt-deposit?usdt_amount=10"),
         client.post("/bot/v1/users/100/deposits", json={}),
         client.get("/bot/v1/users/100/deposits"),
         client.get("/bot/v1/users/100/deposits/1"),
@@ -77,6 +78,8 @@ def test_create_returns_requisites(client, bot_headers, player, provider):
         "id",
         "method",
         "amount",
+        "usdt_amount",
+        "exchange_rate",
         "status",
         "payment_details",
         "expires_at",
@@ -253,3 +256,114 @@ def test_blocked_player_gets_403_everywhere(client, bot_headers, player, provide
     ]:
         assert response.status_code == 403
         assert detail(response)["code"] == "user_blocked"
+
+
+# ---------- крипта: ввод в USDT, пересчёт по курсу ----------
+
+
+def create_crypto(client, headers, usdt="10.00", tg=100, **overrides):
+    body = {"method": "crypto", "usdt_amount": usdt, "idempotency_key": "key-crypto-0001"}
+    body.update(overrides)
+    return client.post(f"/bot/v1/users/{tg}/deposits", json=body, headers=headers)
+
+
+def test_crypto_deposit_shows_usdt_and_tenge(client, bot_headers, player, provider, usdt_rate):
+    response = create_crypto(client, bot_headers)
+    assert response.status_code == 201
+    body = response.json()
+    assert body["method"] == "crypto"
+    assert body["usdt_amount"] == "10.00"
+    assert body["exchange_rate"] == "500.5"
+    assert body["amount"] == 5005  # тенге по курсу
+    assert body["payment_details"]["method"] == "crypto"
+
+
+def test_crypto_accepts_json_number_and_string(client, bot_headers, player, provider, usdt_rate):
+    first = create_crypto(client, bot_headers, usdt=12.5)
+    assert first.status_code == 201
+    assert first.json()["usdt_amount"] == "12.50"
+    client.post(
+        f"/bot/v1/users/100/deposits/{first.json()['id']}/cancel", headers=bot_headers
+    )
+    second = create_crypto(client, bot_headers, usdt="12.50", idempotency_key="key-crypto-0002")
+    assert second.status_code == 201 and second.json()["amount"] == 6256  # 12.5 × 500.5 = 6256.25
+
+
+def test_fiat_response_has_no_crypto_fields(client, bot_headers, player, provider):
+    body = create(client, bot_headers).json()
+    assert (body["usdt_amount"], body["exchange_rate"]) == (None, None)
+
+
+def test_crypto_without_rate_is_503(client, bot_headers, player, provider):
+    response = create_crypto(client, bot_headers)
+    assert response.status_code == 503
+    assert detail(response)["code"] == "exchange_rate_unavailable"
+
+
+def test_crypto_below_limit_reports_tenge_equivalent(client, bot_headers, player, provider, usdt_rate):
+    response = create_crypto(client, bot_headers, usdt="1")
+    assert response.status_code == 422
+    assert detail(response) == {
+        "code": "amount_out_of_range",
+        "min": 1000,
+        "max": 2_000_000,
+        "amount_kzt": 500,
+    }
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"usdt": "10.123"},  # больше двух знаков
+        {"usdt": "0"},
+        {"usdt": "-5"},
+        {"usdt": "abc"},
+        {"usdt": None},
+        {"amount": 5000},  # тенге при crypto не принимаются
+        {"usdt": "10", "amount": 5000},
+    ],
+)
+def test_invalid_crypto_payload_is_422(client, bot_headers, player, provider, usdt_rate, overrides):
+    assert create_crypto(client, bot_headers, **overrides).status_code == 422
+    assert provider.calls == []
+
+
+def test_fiat_with_usdt_amount_is_422(client, bot_headers, player, provider, usdt_rate):
+    assert create(client, bot_headers, usdt_amount="10").status_code == 422
+
+
+# ---------- расчёт тенге до подтверждения ----------
+
+
+def test_quote_endpoint(client, bot_headers, usdt_rate):
+    response = client.get("/bot/v1/quotes/usdt-deposit?usdt_amount=10", headers=bot_headers)
+    assert response.status_code == 200
+    assert response.json() == {
+        "usdt_amount": "10.00",
+        "rate": "500.5",
+        "kzt_amount": 5005,
+        "min": 1000,
+        "max": 2_000_000,
+        "within_limits": True,
+    }
+
+
+def test_quote_flags_amount_below_limit(client, bot_headers, usdt_rate):
+    body = client.get("/bot/v1/quotes/usdt-deposit?usdt_amount=1", headers=bot_headers).json()
+    assert (body["kzt_amount"], body["within_limits"]) == (500, False)
+
+
+def test_quote_without_rate_is_503(client, bot_headers):
+    response = client.get("/bot/v1/quotes/usdt-deposit?usdt_amount=10", headers=bot_headers)
+    assert response.status_code == 503
+    assert detail(response)["code"] == "exchange_rate_unavailable"
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "abc", "1.234", ""])
+def test_quote_rejects_invalid_amount(client, bot_headers, usdt_rate, value):
+    response = client.get(f"/bot/v1/quotes/usdt-deposit?usdt_amount={value}", headers=bot_headers)
+    assert response.status_code == 422
+
+
+def test_quote_requires_service_token(client, usdt_rate):
+    assert client.get("/bot/v1/quotes/usdt-deposit?usdt_amount=10").status_code == 401

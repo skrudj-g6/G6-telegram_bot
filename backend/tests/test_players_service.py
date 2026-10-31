@@ -114,14 +114,43 @@ def test_player_id_cannot_be_taken_by_two_users(db):
     assert len(db.scalars(select(PokerAccount)).all()) == 1
 
 
-def test_taking_registered_id_blocks_the_offender_only(db):
-    """Q-27: попытка использовать уже зарегистрированный ID закрывает доступ нарушителю."""
-    owner, _ = register(db, tg=1)
+def test_first_attempt_to_take_registered_id_is_only_a_warning(db):
+    """Q-29: одна попытка. Первая коллизия предупреждает, но не блокирует."""
+    register(db, tg=1)
     offender, _ = register(db, tg=2, username="b", name="Бек")
     link(db, tg=1, player_id="1234-5678")
 
     with pytest.raises(ServiceError) as exc:
         link(db, tg=2, player_id="1234-5678")
+    assert code_of(exc) == "player_id_taken"
+    assert exc.value.extra == {"blocked": False, "attempts_left": 1}
+
+    db.refresh(offender)
+    assert offender.status == UserStatus.ACTIVE
+    assert offender.duplicate_id_attempts == 1
+    assert offender.block_reason is None
+
+
+def test_warned_user_can_continue_with_a_free_id(db):
+    register(db, tg=1)
+    register(db, tg=2, username="b", name="Бек")
+    link(db, tg=1, player_id="1234-5678")
+    with pytest.raises(ServiceError):
+        link(db, tg=2, player_id="1234-5678")
+    account = link(db, tg=2, player_id="8765-4321")
+    assert account.status == PokerAccountStatus.PENDING
+    assert players.get_user(db, 2).status == UserStatus.ACTIVE
+
+
+def test_second_attempt_blocks_the_offender_only(db):
+    """Q-27 + Q-29: вторая попытка занять уже зарегистрированный ID закрывает доступ."""
+    owner, _ = register(db, tg=1)
+    offender, _ = register(db, tg=2, username="b", name="Бек")
+    link(db, tg=1, player_id="1234-5678")
+
+    for _ in range(2):
+        with pytest.raises(ServiceError) as exc:
+            link(db, tg=2, player_id="1234-5678")
     assert code_of(exc) == "player_id_taken"
     assert exc.value.extra == {"blocked": True}
 
@@ -131,6 +160,7 @@ def test_taking_registered_id_blocks_the_offender_only(db):
     assert "1234-5678" in offender.block_reason
     assert owner.status == UserStatus.ACTIVE
     assert owner.block_reason is None
+    assert owner.duplicate_id_attempts == 0
     assert owner.poker_account.player_id == "1234-5678"
     assert offender.poker_account is None
 
@@ -141,13 +171,29 @@ def test_taking_registered_id_blocks_the_offender_only(db):
     assert db.scalar(select(PokerAccount).where(PokerAccount.user_id == offender.id)) is None
 
 
-def test_pending_user_who_switches_to_taken_id_is_blocked_and_keeps_old_account(db):
+def test_second_collision_may_use_a_different_taken_id(db):
+    """Считается любая попытка занять чужой ID, а не только одинаковая."""
+    register(db, tg=1)
+    register(db, tg=2, username="b", name="Бек")
+    register(db, tg=3, username="c", name="Сара")
+    link(db, tg=1, player_id="1111-1111")
+    link(db, tg=3, player_id="3333-3333")
+    with pytest.raises(ServiceError):
+        link(db, tg=2, player_id="1111-1111")
+    with pytest.raises(ServiceError) as exc:
+        link(db, tg=2, player_id="3333-3333")
+    assert exc.value.extra == {"blocked": True}
+    assert players.get_user(db, 2).status == UserStatus.BLOCKED
+
+
+def test_pending_user_who_switches_to_taken_id_keeps_old_account(db):
     register(db, tg=1)
     register(db, tg=2, username="b", name="Бек")
     link(db, tg=1, player_id="1234-5678")
     own = link(db, tg=2, player_id="1111-1111")
-    with pytest.raises(ServiceError):
-        link(db, tg=2, player_id="1234-5678")
+    for _ in range(2):
+        with pytest.raises(ServiceError):
+            link(db, tg=2, player_id="1234-5678")
     assert db.get(PokerAccount, own.id).player_id == "1111-1111"
     assert players.get_user(db, 2).status == UserStatus.BLOCKED
 

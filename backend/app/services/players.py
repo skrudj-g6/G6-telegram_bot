@@ -70,17 +70,41 @@ def _player_id_taken(db: Session, club_id: int, player_id: str, user_id: int) ->
     )
 
 
-def _block_for_taken_id(db: Session, user: User, player_id: str) -> None:
-    """Q-27: попытка занять уже зарегистрированный игровой ID закрывает доступ к боту.
+# Q-27 + Q-29: первая попытка занять чужой ID — предупреждение, вторая — блокировка.
+MAX_TAKEN_ID_ATTEMPTS = 2
 
+
+def _taken_id_error(db: Session, user: User, player_id: str) -> ServiceError:
+    """Фиксирует попытку занять уже зарегистрированный ID и возвращает ошибку для бота.
+
+    Счётчик растёт атомарным UPDATE: две одновременные попытки не потеряются.
     Разблокировать может только сотрудник (кнопка в панели — этап 8).
     """
+    db.execute(
+        update(User)
+        .where(User.id == user.id)
+        .values(duplicate_id_attempts=User.duplicate_id_attempts + 1)
+    )
+    db.commit()
+    db.refresh(user)
+
+    if user.duplicate_id_attempts < MAX_TAKEN_ID_ATTEMPTS:
+        logger.warning(
+            "Предупреждение telegram_id=%s: игровой ID %s уже привязан", user.telegram_id, player_id
+        )
+        return ServiceError(
+            "player_id_taken",
+            blocked=False,
+            attempts_left=MAX_TAKEN_ID_ATTEMPTS - user.duplicate_id_attempts,
+        )
+
     user.status = UserStatus.BLOCKED
-    user.block_reason = f"Попытка привязать уже занятый игровой ID {player_id}"
+    user.block_reason = f"Повторная попытка привязать уже занятый игровой ID {player_id}"
     db.commit()
     logger.warning(
         "Пользователь telegram_id=%s заблокирован: игровой ID %s уже привязан", user.telegram_id, player_id
     )
+    return ServiceError("player_id_taken", blocked=True)
 
 
 def link_poker_account(db: Session, *, telegram_id: int, raw_player_id: str) -> PokerAccount:
@@ -89,7 +113,8 @@ def link_poker_account(db: Session, *, telegram_id: int, raw_player_id: str) -> 
     - pending: ID можно исправить (опечатка);
     - rejected: можно отправить исправленный ID, аккаунт снова pending;
     - approved: игрок менять ID не может;
-    - ID уже привязан другому игроку: попытка блокирует пользователя (Q-27).
+    - ID уже привязан другому игроку: первая попытка — предупреждение, вторая блокирует
+      пользователя (Q-27, Q-29).
     """
     player_id = normalize_player_id(raw_player_id)
     if player_id is None:
@@ -106,8 +131,7 @@ def link_poker_account(db: Session, *, telegram_id: int, raw_player_id: str) -> 
         raise ServiceError("account_locked")
 
     if _player_id_taken(db, club.id, player_id, user.id):
-        _block_for_taken_id(db, user, player_id)
-        raise ServiceError("player_id_taken", blocked=True)
+        raise _taken_id_error(db, user, player_id)
 
     if account is None:
         account = PokerAccount(
@@ -131,8 +155,7 @@ def link_poker_account(db: Session, *, telegram_id: int, raw_player_id: str) -> 
         db.rollback()
         # Гонка: ID успел занять другой игрок.
         if _player_id_taken(db, club.id, player_id, user.id):
-            _block_for_taken_id(db, user, player_id)
-            raise ServiceError("player_id_taken", blocked=True)
+            raise _taken_id_error(db, user, player_id)
         raise
     return account
 

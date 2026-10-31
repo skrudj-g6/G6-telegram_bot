@@ -11,6 +11,7 @@ STATUS_BY_CODE = {
     "invalid_player_id": 422,
     "reason_required": 422,
     "invalid_method": 422,
+    "invalid_amount": 422,
     "amount_out_of_range": 422,
     "invalid_receipt": 422,
     "receipt_too_large": 413,
@@ -23,6 +24,8 @@ STATUS_BY_CODE = {
     "account_not_approved": 403,
     # Платёжка не подключена или нет свободных реквизитов: попробовать позже (Q-22).
     "no_requisites_available": 503,
+    # Владелец ещё не задал курс USDT в панели: крипта временно недоступна.
+    "exchange_rate_unavailable": 503,
 }
 
 

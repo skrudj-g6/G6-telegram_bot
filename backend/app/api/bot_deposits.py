@@ -1,11 +1,12 @@
+from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Path, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Path, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_bot_token
 from app.db.session import get_db
-from app.schemas.deposits import CreateDepositRequest, DepositOut, LimitsOut
+from app.schemas.deposits import CreateDepositRequest, DepositOut, LimitsOut, UsdtQuoteOut
 from app.services import app_settings, deposits
 from app.services.receipt_storage import MAX_RECEIPT_BYTES
 
@@ -26,6 +27,15 @@ def get_limits(db: Session = Depends(get_db)):
     return app_settings.get_limits(db)
 
 
+@router.get("/quotes/usdt-deposit", response_model=UsdtQuoteOut)
+def quote_usdt_deposit(
+    usdt_amount: Annotated[Decimal, Query(gt=0, max_digits=12, decimal_places=2)],
+    db: Session = Depends(get_db),
+):
+    """Сколько тенге получится за введённые USDT: бот показывает это до подтверждения."""
+    return deposits.quote_usdt(db, usdt_amount)
+
+
 @router.post("/users/{telegram_id}/deposits", response_model=DepositOut)
 def create_deposit(
     telegram_id: TelegramId,
@@ -39,6 +49,7 @@ def create_deposit(
         telegram_id=telegram_id,
         method=payload.method,
         amount=payload.amount,
+        usdt_amount=payload.usdt_amount,
         idempotency_key=payload.idempotency_key,
     )
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK

@@ -1,10 +1,15 @@
 import logging
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.orm import Session
 
 from app.models import AppSetting
 
 logger = logging.getLogger(__name__)
+
+# Курс USDT к тенге (сколько тенге за 1 USDT). Значения по умолчанию нет намеренно:
+# выдуманный курс недопустим, пока владелец не задал его в панели (ТЗ §17).
+USDT_RATE_KEY = "usdt_kzt_rate"
 
 # Значения по умолчанию на случай, если строки в app_settings нет. Те же значения
 # записывает миграция, чтобы владелец мог менять их в панели (Q-6, Q-9, Q-23).
@@ -26,6 +31,22 @@ def get_int(db: Session, key: str) -> int:
         except ValueError:
             logger.error("Некорректное значение настройки %s, используется значение по умолчанию", key)
     return DEFAULTS[key]
+
+
+def get_usdt_rate(db: Session) -> Decimal | None:
+    """Курс USDT/KZT или None, если он не задан или записан некорректно."""
+    row = db.get(AppSetting, USDT_RATE_KEY)
+    if row is None:
+        return None
+    try:
+        rate = Decimal(row.value.strip())
+    except InvalidOperation:
+        logger.error("Некорректный курс USDT в настройках")
+        return None
+    if not rate.is_finite() or rate <= 0:
+        logger.error("Курс USDT должен быть положительным числом")
+        return None
+    return rate
 
 
 def get_limits(db: Session) -> dict[str, dict[str, int]]:
