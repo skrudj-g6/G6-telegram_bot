@@ -114,6 +114,52 @@ def test_player_id_cannot_be_taken_by_two_users(db):
     assert len(db.scalars(select(PokerAccount)).all()) == 1
 
 
+def test_taking_registered_id_blocks_the_offender_only(db):
+    """Q-27: попытка использовать уже зарегистрированный ID закрывает доступ нарушителю."""
+    owner, _ = register(db, tg=1)
+    offender, _ = register(db, tg=2, username="b", name="Бек")
+    link(db, tg=1, player_id="1234-5678")
+
+    with pytest.raises(ServiceError) as exc:
+        link(db, tg=2, player_id="1234-5678")
+    assert code_of(exc) == "player_id_taken"
+    assert exc.value.extra == {"blocked": True}
+
+    db.refresh(offender)
+    db.refresh(owner)
+    assert offender.status == UserStatus.BLOCKED
+    assert "1234-5678" in offender.block_reason
+    assert owner.status == UserStatus.ACTIVE
+    assert owner.block_reason is None
+    assert owner.poker_account.player_id == "1234-5678"
+    assert offender.poker_account is None
+
+    # Дальше регистрация невозможна, даже с другим, свободным ID.
+    with pytest.raises(ServiceError) as exc:
+        link(db, tg=2, player_id="8765-4321")
+    assert code_of(exc) == "user_blocked"
+    assert db.scalar(select(PokerAccount).where(PokerAccount.user_id == offender.id)) is None
+
+
+def test_pending_user_who_switches_to_taken_id_is_blocked_and_keeps_old_account(db):
+    register(db, tg=1)
+    register(db, tg=2, username="b", name="Бек")
+    link(db, tg=1, player_id="1234-5678")
+    own = link(db, tg=2, player_id="1111-1111")
+    with pytest.raises(ServiceError):
+        link(db, tg=2, player_id="1234-5678")
+    assert db.get(PokerAccount, own.id).player_id == "1111-1111"
+    assert players.get_user(db, 2).status == UserStatus.BLOCKED
+
+
+def test_retrying_own_id_does_not_block(db):
+    user, _ = register(db)
+    link(db)
+    link(db)
+    db.refresh(user)
+    assert user.status == UserStatus.ACTIVE
+
+
 def test_blocked_user_cannot_link(db):
     user, _ = register(db)
     user.status = UserStatus.BLOCKED

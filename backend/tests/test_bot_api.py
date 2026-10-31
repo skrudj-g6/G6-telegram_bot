@@ -148,6 +148,16 @@ def test_link_duplicate_player_id_is_409(client, bot_headers):
     response = link(client, bot_headers, tg=200)
     assert response.status_code == 409
     assert detail_code(response) == "player_id_taken"
+    assert response.json()["detail"]["blocked"] is True
+
+    # Q-27: нарушитель заблокирован, владелец ID — нет.
+    offender = client.get("/bot/v1/users/200", headers=bot_headers).json()
+    assert offender["status"] == "blocked"
+    assert offender["poker_account"] is None
+    assert client.get("/bot/v1/users/100", headers=bot_headers).json()["status"] == "active"
+    retry = link(client, bot_headers, tg=200, player_id="8765-4321")
+    assert retry.status_code == 403
+    assert detail_code(retry) == "user_blocked"
 
 
 def test_link_blocked_user_is_403(client, bot_headers, db):

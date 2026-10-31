@@ -1,3 +1,5 @@
+import logging
+
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -6,6 +8,8 @@ from app.core.config import get_settings
 from app.core.validators import normalize_player_id
 from app.models import Club, PokerAccount, PokerAccountStatus, User, UserStatus
 from app.services.errors import ServiceError
+
+logger = logging.getLogger(__name__)
 
 
 def get_user(db: Session, telegram_id: int) -> User:
@@ -66,12 +70,26 @@ def _player_id_taken(db: Session, club_id: int, player_id: str, user_id: int) ->
     )
 
 
+def _block_for_taken_id(db: Session, user: User, player_id: str) -> None:
+    """Q-27: попытка занять уже зарегистрированный игровой ID закрывает доступ к боту.
+
+    Разблокировать может только сотрудник (кнопка в панели — этап 8).
+    """
+    user.status = UserStatus.BLOCKED
+    user.block_reason = f"Попытка привязать уже занятый игровой ID {player_id}"
+    db.commit()
+    logger.warning(
+        "Пользователь telegram_id=%s заблокирован: игровой ID %s уже привязан", user.telegram_id, player_id
+    )
+
+
 def link_poker_account(db: Session, *, telegram_id: int, raw_player_id: str) -> PokerAccount:
     """Привязывает игровой ID к игроку; аккаунт ждёт подтверждения админом (Q-3, Q-4).
 
     - pending: ID можно исправить (опечатка);
     - rejected: можно отправить исправленный ID, аккаунт снова pending;
-    - approved: игрок менять ID не может.
+    - approved: игрок менять ID не может;
+    - ID уже привязан другому игроку: попытка блокирует пользователя (Q-27).
     """
     player_id = normalize_player_id(raw_player_id)
     if player_id is None:
@@ -88,7 +106,8 @@ def link_poker_account(db: Session, *, telegram_id: int, raw_player_id: str) -> 
         raise ServiceError("account_locked")
 
     if _player_id_taken(db, club.id, player_id, user.id):
-        raise ServiceError("player_id_taken")
+        _block_for_taken_id(db, user, player_id)
+        raise ServiceError("player_id_taken", blocked=True)
 
     if account is None:
         account = PokerAccount(
@@ -112,7 +131,8 @@ def link_poker_account(db: Session, *, telegram_id: int, raw_player_id: str) -> 
         db.rollback()
         # Гонка: ID успел занять другой игрок.
         if _player_id_taken(db, club.id, player_id, user.id):
-            raise ServiceError("player_id_taken")
+            _block_for_taken_id(db, user, player_id)
+            raise ServiceError("player_id_taken", blocked=True)
         raise
     return account
 

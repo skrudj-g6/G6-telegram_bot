@@ -7,6 +7,8 @@ _TMP_DIR = tempfile.mkdtemp(prefix="altyn-tests-")
 BOT_TOKEN = "test-service-token-0123456789abcdef"
 
 os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///{_TMP_DIR}/test.db"
+os.environ["RECEIPTS_DIR"] = f"{_TMP_DIR}/receipts"
+os.environ["BACKGROUND_JOBS_ENABLED"] = "false"  # таймер в тестах вызывается вручную
 os.environ["BOT_SERVICE_TOKEN"] = BOT_TOKEN
 os.environ["CLUB_ID"] = "692609"
 os.environ["APP_ENV"] = "test"
@@ -51,3 +53,33 @@ def client():
 @pytest.fixture
 def bot_headers():
     return {"X-Service-Token": BOT_TOKEN}
+
+
+class FakeRequisitesProvider:
+    """Тестовая «платёжка»: выдаёт реквизиты, запоминает обращения."""
+
+    def __init__(self):
+        self.calls = []
+
+    def reserve(self, method, amount):
+        self.calls.append((method, amount))
+        return {"bank": "Тестовый банк", "card": "0000 0000 0000 0000", "method": method}
+
+
+@pytest.fixture
+def provider(monkeypatch):
+    """Подключает платёжку с реквизитами; без этой фикстуры реквизитов нет (Q-22)."""
+    from app.services import requisites
+
+    fake = FakeRequisitesProvider()
+    monkeypatch.setattr(requisites, "_provider", fake)
+    return fake
+
+
+@pytest.fixture(autouse=True)
+def _clean_receipts():
+    import shutil
+    from pathlib import Path
+
+    yield
+    shutil.rmtree(Path(os.environ["RECEIPTS_DIR"]), ignore_errors=True)

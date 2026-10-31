@@ -27,7 +27,11 @@ services:
       APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Almaty}
       CLUB_ID: ${CLUB_ID:-692609}
       BOT_SERVICE_TOKEN: ${BOT_SERVICE_TOKEN:?задайте BOT_SERVICE_TOKEN в .env}
+      RECEIPTS_DIR: /data/receipts
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    volumes:
+      # Чеки игроков (Q-23, хранятся неделю). Не входят в бэкап PostgreSQL.
+      - receipts:/data/receipts
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
@@ -37,3 +41,4 @@ services:
 
 volumes:
   pgdata:
+  receipts:

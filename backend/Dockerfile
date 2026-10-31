@@ -10,8 +10,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Не root
-RUN useradd --create-home appuser
+# Не root. Каталог чеков создаётся заранее с нужным владельцем: именованный том Docker
+# наследует его при первом монтировании, иначе appuser не смог бы писать файлы.
+RUN useradd --create-home appuser \
+    && mkdir -p /data/receipts \
+    && chown -R appuser:appuser /data
 USER appuser
 
 EXPOSE 8000

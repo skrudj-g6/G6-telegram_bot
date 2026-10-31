@@ -1,9 +1,12 @@
+import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api import bot_players, health
+from app import worker
+from app.api import bot_deposits, bot_players, health
 from app.api.errors import register_error_handlers
 from app.core.config import get_settings
 from app.core.logging import setup_logging
@@ -20,14 +23,21 @@ async def lifespan(_: FastAPI):
         settings.app_env,
         settings.app_timezone,
     )
-    yield
+    task = asyncio.create_task(worker.run_forever()) if settings.background_jobs_enabled else None
+    try:
+        yield
+    finally:
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
         title="Altyn Crown API",
-        version="0.1.0",
+        version="0.3.0",
         lifespan=lifespan,
         # В production документация API не публикуется.
         docs_url=None if settings.is_production else "/docs",
@@ -37,6 +47,7 @@ def create_app() -> FastAPI:
     register_error_handlers(app)
     app.include_router(health.router)
     app.include_router(bot_players.router)
+    app.include_router(bot_deposits.router)
     return app
 
 

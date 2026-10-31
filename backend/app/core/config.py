@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     bot_service_token: str
     # Код клуба в покерном приложении (ТЗ §2).
     club_id: str = "692609"
+    # Каталог для чеков игроков (Q-23). В Docker — отдельный том.
+    receipts_dir: str = "./data/receipts"
+    # Автозакрытие заявок без чека и удаление старых чеков. В тестах отключается.
+    background_jobs_enabled: bool = True
 
     @field_validator("bot_service_token")
     @classmethod

@@ -33,10 +33,40 @@ def alembic_config() -> Config:
 def test_upgrade_creates_schema_and_club(migration_db):
     command.upgrade(alembic_config(), "head")
     engine = create_engine(migration_db)
-    assert {"clubs", "users", "poker_accounts"} <= set(inspect(engine).get_table_names())
+    assert {
+        "clubs",
+        "users",
+        "poker_accounts",
+        "app_settings",
+        "deposit_requests",
+        "deposit_status_history",
+    } <= set(inspect(engine).get_table_names())
     with engine.connect() as conn:
         rows = conn.execute(text("SELECT club_id, name FROM clubs")).all()
+        settings = dict(conn.execute(text("SELECT key, value FROM app_settings")).all())
     assert [tuple(r) for r in rows] == [("692609", "Altyn Crown")]
+    # Начальные лимиты и таймауты владельца (Q-6, Q-9, Q-23).
+    assert settings == {
+        "deposit_min_amount": "1000",
+        "deposit_max_amount": "2000000",
+        "withdrawal_min_amount": "1000",
+        "withdrawal_max_amount": "2000000",
+        "deposit_receipt_timeout_minutes": "10",
+        "receipt_retention_days": "7",
+    }
+
+
+def test_downgrade_one_step_keeps_players(migration_db):
+    """Откат этапа 3 не трогает игроков и клуб."""
+    config = alembic_config()
+    command.upgrade(config, "head")
+    command.downgrade(config, "0002")
+    tables = set(inspect(create_engine(migration_db)).get_table_names())
+    assert {"clubs", "users", "poker_accounts"} <= tables
+    assert not {"deposit_requests", "app_settings", "deposit_status_history"} & tables
+    assert "block_reason" not in {
+        c["name"] for c in inspect(create_engine(migration_db)).get_columns("users")
+    }
 
 
 def test_migrations_match_models(migration_db):
