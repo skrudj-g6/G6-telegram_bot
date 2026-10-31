@@ -6,8 +6,8 @@ from sqlalchemy import create_engine, pool
 from app.core.config import get_settings
 from app.db.base import Base
 
-# Модели подключаются импортом здесь по мере появления (этап 2+),
-# чтобы их таблицы попадали в Base.metadata и в autogenerate.
+# Импорт моделей регистрирует их таблицы в Base.metadata (нужно для autogenerate).
+import app.models  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

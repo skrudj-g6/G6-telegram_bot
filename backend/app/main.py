@@ -3,7 +3,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api import health
+from app.api import bot_players, health
+from app.api.errors import register_error_handlers
 from app.core.config import get_settings
 from app.core.logging import setup_logging
 
@@ -33,7 +34,9 @@ def create_app() -> FastAPI:
         redoc_url=None,
         openapi_url=None if settings.is_production else "/openapi.json",
     )
+    register_error_handlers(app)
     app.include_router(health.router)
+    app.include_router(bot_players.router)
     return app
 
 

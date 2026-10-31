@@ -15,6 +15,17 @@ class Settings(BaseSettings):
     app_timezone: str = "Asia/Almaty"
     # Без значения по умолчанию: пароль БД не должен жить в коде.
     database_url: str
+    # Секрет внутренней авторизации бот → backend (D-3). Только из ENV.
+    bot_service_token: str
+    # Код клуба в покерном приложении (ТЗ §2).
+    club_id: str = "692609"
+
+    @field_validator("bot_service_token")
+    @classmethod
+    def _check_service_token(cls, value: str) -> str:
+        if len(value) < 16:
+            raise ValueError("BOT_SERVICE_TOKEN слишком короткий (минимум 16 символов)")
+        return value
 
     @field_validator("app_timezone")
     @classmethod

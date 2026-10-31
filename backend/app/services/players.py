@@ -1,0 +1,172 @@
+from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.core.config import get_settings
+from app.core.validators import normalize_player_id
+from app.models import Club, PokerAccount, PokerAccountStatus, User, UserStatus
+from app.services.errors import ServiceError
+
+
+def get_user(db: Session, telegram_id: int) -> User:
+    user = db.scalar(select(User).where(User.telegram_id == telegram_id))
+    if user is None:
+        raise ServiceError("user_not_found")
+    return user
+
+
+def register_user(
+    db: Session, *, telegram_id: int, username: str | None, first_name: str
+) -> tuple[User, bool]:
+    """Регистрирует игрока по Telegram ID. Идемпотентно: повтор не создаёт дубль.
+
+    Возвращает (пользователь, создан_ли_сейчас).
+    """
+    user = db.scalar(select(User).where(User.telegram_id == telegram_id))
+    if user is not None:
+        # Имя и username в Telegram могут меняться — обновляем.
+        if user.username != username or user.first_name != first_name:
+            user.username = username
+            user.first_name = first_name
+            db.commit()
+        return user, False
+
+    user = User(telegram_id=telegram_id, username=username, first_name=first_name)
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError:
+        # Одновременный /start: другой запрос успел создать запись первым.
+        db.rollback()
+        user = db.scalar(select(User).where(User.telegram_id == telegram_id))
+        if user is None:
+            raise
+        return user, False
+    return user, True
+
+
+def _get_club(db: Session) -> Club:
+    club = db.scalar(select(Club).where(Club.club_id == get_settings().club_id))
+    if club is None:
+        # Клуб создаётся миграцией; его отсутствие — ошибка конфигурации, а не игрока.
+        raise RuntimeError(f"Клуб {get_settings().club_id!r} не найден в БД")
+    return club
+
+
+def _player_id_taken(db: Session, club_id: int, player_id: str, user_id: int) -> bool:
+    return (
+        db.scalar(
+            select(PokerAccount.id).where(
+                PokerAccount.club_id == club_id,
+                PokerAccount.player_id == player_id,
+                PokerAccount.user_id != user_id,
+            )
+        )
+        is not None
+    )
+
+
+def link_poker_account(db: Session, *, telegram_id: int, raw_player_id: str) -> PokerAccount:
+    """Привязывает игровой ID к игроку; аккаунт ждёт подтверждения админом (Q-3, Q-4).
+
+    - pending: ID можно исправить (опечатка);
+    - rejected: можно отправить исправленный ID, аккаунт снова pending;
+    - approved: игрок менять ID не может.
+    """
+    player_id = normalize_player_id(raw_player_id)
+    if player_id is None:
+        raise ServiceError("invalid_player_id")
+
+    user = get_user(db, telegram_id)
+    if user.status != UserStatus.ACTIVE:
+        raise ServiceError("user_blocked")
+
+    club = _get_club(db)
+    account = user.poker_account
+
+    if account is not None and account.status == PokerAccountStatus.APPROVED:
+        raise ServiceError("account_locked")
+
+    if _player_id_taken(db, club.id, player_id, user.id):
+        raise ServiceError("player_id_taken")
+
+    if account is None:
+        account = PokerAccount(
+            user_id=user.id,
+            club_id=club.id,
+            player_id=player_id,
+            status=PokerAccountStatus.PENDING,
+        )
+        db.add(account)
+    elif account.status == PokerAccountStatus.PENDING and account.player_id == player_id:
+        return account  # тот же ID повторно — ничего не меняем
+    else:
+        account.player_id = player_id
+        account.status = PokerAccountStatus.PENDING
+        account.reject_reason = None
+        account.reviewed_at = None
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        # Гонка: ID успел занять другой игрок.
+        if _player_id_taken(db, club.id, player_id, user.id):
+            raise ServiceError("player_id_taken")
+        raise
+    return account
+
+
+def _review_failure(db: Session, account_id: int) -> ServiceError:
+    exists = db.scalar(select(PokerAccount.id).where(PokerAccount.id == account_id))
+    return ServiceError("account_not_found" if exists is None else "invalid_transition")
+
+
+def approve_poker_account(db: Session, *, account_id: int) -> PokerAccount:
+    """Админ принимает игрока в клуб. Только из pending; повторное подтверждение — ошибка.
+
+    Условный UPDATE защищает от гонки двух админов. HTTP-доступ и запись «кто
+    подтвердил» появятся на этапе 5 вместе с авторизацией сотрудников.
+    """
+    result = db.execute(
+        update(PokerAccount)
+        .where(
+            PokerAccount.id == account_id,
+            PokerAccount.status == PokerAccountStatus.PENDING,
+        )
+        .values(
+            status=PokerAccountStatus.APPROVED,
+            reject_reason=None,
+            reviewed_at=func.now(),
+        )
+    )
+    if result.rowcount == 0:
+        db.rollback()
+        raise _review_failure(db, account_id)
+    db.commit()
+    return db.get(PokerAccount, account_id, populate_existing=True)
+
+
+def reject_poker_account(db: Session, *, account_id: int, reason: str) -> PokerAccount:
+    """Админ отклоняет игрока. Причина обязательна (по аналогии с ТЗ §5.2)."""
+    reason = reason.strip()
+    if not reason:
+        raise ServiceError("reason_required")
+
+    result = db.execute(
+        update(PokerAccount)
+        .where(
+            PokerAccount.id == account_id,
+            PokerAccount.status == PokerAccountStatus.PENDING,
+        )
+        .values(
+            status=PokerAccountStatus.REJECTED,
+            reject_reason=reason[:500],
+            reviewed_at=func.now(),
+        )
+    )
+    if result.rowcount == 0:
+        db.rollback()
+        raise _review_failure(db, account_id)
+    db.commit()
+    return db.get(PokerAccount, account_id, populate_existing=True)
