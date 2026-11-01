@@ -21,8 +21,21 @@ class Settings(BaseSettings):
     club_id: str = "692609"
     # Каталог для чеков игроков (Q-23). В Docker — отдельный том.
     receipts_dir: str = "./data/receipts"
-    # Автозакрытие заявок без чека и удаление старых чеков. В тестах отключается.
+    # Автозакрытие заявок без чека, удаление старых чеков, обновление курса USDT.
+    # В тестах отключается.
     background_jobs_enabled: bool = True
+    # Источник автоматического курса USDT/KZT (Q-30): "coingecko" или "none" (выключено,
+    # тогда курс задаётся вручную в режиме manual).
+    rate_source: str = "coingecko"
+    rate_source_url: str = "https://api.coingecko.com/api/v3/simple/price"
+
+    @field_validator("rate_source")
+    @classmethod
+    def _check_rate_source(cls, value: str) -> str:
+        source = value.strip().lower()
+        if source not in {"coingecko", "none"}:
+            raise ValueError(f"Неизвестный источник курса: {value!r}")
+        return source
 
     @field_validator("bot_service_token")
     @classmethod

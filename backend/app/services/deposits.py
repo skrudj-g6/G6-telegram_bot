@@ -58,10 +58,10 @@ def usdt_to_kzt(usdt: Decimal, rate: Decimal) -> int:
     return int((usdt * rate).to_integral_value(rounding=ROUND_DOWN))
 
 
-def quote_usdt(db: Session, usdt_amount: Decimal | None) -> dict:
+def quote_usdt(db: Session, usdt_amount: Decimal | None, now: datetime | None = None) -> dict:
     """Сколько тенге получится за введённые USDT (бот показывает это до подтверждения)."""
     usdt = _normalize_usdt(usdt_amount)
-    rate = app_settings.get_usdt_rate(db)
+    rate = app_settings.get_usdt_rate(db, now)
     if rate is None:
         raise ServiceError("exchange_rate_unavailable")
     kzt = usdt_to_kzt(usdt, rate)
@@ -239,7 +239,7 @@ def create_deposit(
         if usdt_amount is None or amount is not None:
             raise ServiceError("invalid_amount")
         usdt = _normalize_usdt(usdt_amount)
-        rate = app_settings.get_usdt_rate(db)
+        rate = app_settings.get_usdt_rate(db, now)
         if rate is None:
             raise ServiceError("exchange_rate_unavailable")
         amount_kzt = usdt_to_kzt(usdt, rate)

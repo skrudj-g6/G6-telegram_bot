@@ -84,6 +84,7 @@ def usdt_rate(db):
     from app.models import AppSetting
 
     db.add(AppSetting(key="usdt_kzt_rate", value="500.50"))
+    db.add(AppSetting(key="usdt_rate_mode", value="manual"))  # ручной курс не устаревает
     db.commit()
     return "500.50"
 

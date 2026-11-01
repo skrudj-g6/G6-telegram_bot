@@ -29,7 +29,7 @@
 | POST | `/bot/v1/users/{telegram_id}/deposits/{id}/receipt` | Чек (multipart `file`: JPEG, PNG, PDF до 10 МБ) |
 | POST | `/bot/v1/users/{telegram_id}/deposits/{id}/cancel` | Отмена, только до чека |
 
-Пока платёжка не подключена, создание заявки отвечает 503 `no_requisites_available`. Для crypto нужен курс USDT в `app_settings` (`usdt_kzt_rate`), иначе 503 `exchange_rate_unavailable`. Игрок, второй раз попытавшийся привязать уже занятый игровой ID, блокируется (403 `user_blocked` на все запросы); первая попытка — предупреждение.
+Пока платёжка не подключена, создание заявки отвечает 503 `no_requisites_available`. Для crypto нужен свежий курс USDT: backend обновляет его сам раз в 5 минут (`RATE_SOURCE`, по умолчанию CoinGecko); если курс старше `usdt_rate_max_age_minutes` (30), отвечает 503 `exchange_rate_unavailable`. Курс можно зафиксировать вручную: `usdt_rate_mode=manual` в `app_settings`. Тенге всегда целые (округление вниз). Игрок, второй раз попытавшийся привязать уже занятый игровой ID, блокируется (403 `user_blocked` на все запросы); первая попытка — предупреждение.
 
 Ошибки: `{"detail": {"code": "..."}}`, коды — `invalid_player_id` (422), `player_id_taken` и `account_locked` (409), `user_not_found` (404), `user_blocked` (403), `unauthorized` (401).
 Подтверждение/отклонение игрока админом реализовано в сервисе, HTTP-эндпоинты появятся на этапе 5 (с авторизацией сотрудников).

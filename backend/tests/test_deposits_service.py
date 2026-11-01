@@ -133,6 +133,7 @@ def test_invalid_rate_in_settings_is_treated_as_missing(db, provider, bad_rate):
     from app.models import AppSetting
 
     db.add(AppSetting(key="usdt_kzt_rate", value=bad_rate))
+    db.add(AppSetting(key="usdt_rate_mode", value="manual"))
     db.commit()
     approved_player(db)
     with pytest.raises(ServiceError) as exc:
