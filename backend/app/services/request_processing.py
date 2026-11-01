@@ -2,8 +2,9 @@
 
 Одинаково для пополнений и выводов. Каждый переход — условный UPDATE (D-6): из двух
 одновременных действий (два оператора берут одну заявку) успешным будет только одно.
-Исполнитель — тот, кто взял заявку. Завершить или вернуть чужую заявку может только
-Admin или Owner. Статус, история и аудит пишутся в одной транзакции.
+Работать с любой заявкой может любой сотрудник с правом requests.process (Q-42):
+исполнитель фиксируется для справки, но не ограничивает остальных. Статус, история и
+аудит пишутся в одной транзакции.
 
 Деньги система не двигает (ТЗ §12): «выполнено» означает, что оператор вручную провёл
 операцию и фишки/выплата отражены.
@@ -18,7 +19,6 @@ from app.models import (
     DepositRequest,
     DepositStatus,
     DepositStatusHistory,
-    StaffRole,
     StaffUser,
     WithdrawalRequest,
     WithdrawalStatus,
@@ -27,7 +27,6 @@ from app.models import (
 from app.services import audit
 from app.services.errors import ServiceError
 
-PRIVILEGED_ROLES = (StaffRole.OWNER, StaffRole.ADMIN)
 MAX_REASON = 500
 
 
@@ -68,14 +67,12 @@ def _load(db: Session, kind: Kind, request_id: int):
     )
 
 
-def _failure(db: Session, kind: Kind, request_id: int, expected: str) -> ServiceError:
+def _failure(db: Session, kind: Kind, request_id: int) -> ServiceError:
     """Почему условный UPDATE ничего не изменил."""
     current = _load(db, kind, request_id)
     if current is None:
         return ServiceError("request_not_found")
-    if current.status != expected:
-        return ServiceError("invalid_transition", status=current.status)
-    return ServiceError("not_assigned_to_you")
+    return ServiceError("invalid_transition", status=current.status)
 
 
 def _move(
@@ -89,17 +86,17 @@ def _move(
     to_status: str,
     values: dict,
     comment: str | None = None,
-    own_only: bool,
     ip: str | None = None,
 ):
     model = kind.model
-    conditions = [model.id == request_id, model.status == from_status]
-    if own_only and staff.role not in PRIVILEGED_ROLES:
-        conditions.append(model.assigned_staff_id == staff.id)
-    result = db.execute(update(model).where(*conditions).values(status=to_status, **values))
+    result = db.execute(
+        update(model)
+        .where(model.id == request_id, model.status == from_status)
+        .values(status=to_status, **values)
+    )
     if result.rowcount == 0:
         db.rollback()
-        raise _failure(db, kind, request_id, from_status)
+        raise _failure(db, kind, request_id)
     db.add(
         kind.history(
             request_id=request_id,
@@ -128,15 +125,15 @@ def take(db: Session, kind: Kind, request_id: int, staff: StaffUser, ip: str | N
     invalid_transition."""
     return _move(
         db, kind, request_id, staff, action="take", from_status=kind.pending,
-        to_status=kind.processing, values={"assigned_staff_id": staff.id}, own_only=False, ip=ip,
+        to_status=kind.processing, values={"assigned_staff_id": staff.id}, ip=ip,
     )
 
 
 def release(db: Session, kind: Kind, request_id: int, staff: StaffUser, ip: str | None = None):
-    """processing → pending: вернуть в очередь (исполнитель, Admin или Owner)."""
+    """processing → pending: вернуть в очередь (любой сотрудник с правом обработки)."""
     return _move(
         db, kind, request_id, staff, action="release", from_status=kind.processing,
-        to_status=kind.pending, values={"assigned_staff_id": None}, own_only=True, ip=ip,
+        to_status=kind.pending, values={"assigned_staff_id": None}, ip=ip,
     )
 
 
@@ -144,7 +141,7 @@ def complete(db: Session, kind: Kind, request_id: int, staff: StaffUser, ip: str
     """processing → completed."""
     return _move(
         db, kind, request_id, staff, action="complete", from_status=kind.processing,
-        to_status=kind.completed, values={}, own_only=True, ip=ip,
+        to_status=kind.completed, values={}, ip=ip,
     )
 
 
@@ -159,5 +156,5 @@ def reject(
     return _move(
         db, kind, request_id, staff, action="reject", from_status=kind.processing,
         to_status=kind.rejected, values={"reject_reason": reason}, comment=reason,
-        own_only=True, ip=ip,
+        ip=ip,
     )

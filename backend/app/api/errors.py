@@ -35,7 +35,6 @@ STATUS_BY_CODE = {
     "login_taken": 409,
     "cannot_modify_self": 409,
     "last_owner": 409,
-    "not_assigned_to_you": 403,
     "receipt_not_available": 404,
     "bank_not_found": 404,
     "bank_exists": 409,

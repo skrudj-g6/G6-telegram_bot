@@ -110,17 +110,25 @@ def test_two_operators_cannot_take_the_same_request(client, auth, pending_deposi
     assert detail(r)["status"] == "processing"
 
 
-def test_only_assignee_or_admin_can_finish(client, auth, pending_deposit):
-    h1, _ = auth("operator", "op1")
-    h2, _ = auth("operator", "op2")
-    ha, _ = auth("admin", "adm1")
+def test_any_operator_can_work_with_any_request(client, auth, pending_deposit):
+    """Q-42: заявку, которую взял другой оператор, может завершить любой сотрудник с правом."""
+    h1, op1 = auth("operator", "op1")
+    h2, op2 = auth("operator", "op2")
     client.post(f"/admin/v1/deposits/{pending_deposit}/take", headers=h1)
-    for action in ("complete", "release"):
-        r = client.post(f"/admin/v1/deposits/{pending_deposit}/{action}", headers=h2)
-        assert (r.status_code, detail(r)["code"]) == (403, "not_assigned_to_you")
-    r = client.post(f"/admin/v1/deposits/{pending_deposit}/reject", json={"reason": "x"}, headers=h2)
-    assert r.status_code == 403
-    assert client.post(f"/admin/v1/deposits/{pending_deposit}/complete", headers=ha).status_code == 200
+    released = client.post(f"/admin/v1/deposits/{pending_deposit}/release", headers=h2)
+    assert (released.status_code, released.json()["status"]) == (200, "pending")
+    client.post(f"/admin/v1/deposits/{pending_deposit}/take", headers=h1)
+    done = client.post(f"/admin/v1/deposits/{pending_deposit}/complete", headers=h2)
+    assert (done.status_code, done.json()["status"]) == (200, "completed")
+
+
+def test_finished_by_other_operator_is_recorded_in_history(client, db, auth, pending_deposit):
+    h1, op1 = auth("operator", "op1")
+    h2, op2 = auth("operator", "op2")
+    client.post(f"/admin/v1/deposits/{pending_deposit}/take", headers=h1)
+    client.post(f"/admin/v1/deposits/{pending_deposit}/reject", json={"reason": "Нет оплаты"}, headers=h2)
+    last = db.scalars(select(DepositStatusHistory).order_by(DepositStatusHistory.id.desc())).first()
+    assert (last.to_status, last.actor_id) == ("rejected", op2.id)
 
 
 def test_release_returns_to_queue_and_another_can_take(client, auth, pending_deposit):
