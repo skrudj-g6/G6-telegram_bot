@@ -29,6 +29,7 @@ services:
       BOT_SERVICE_TOKEN: ${BOT_SERVICE_TOKEN:?задайте BOT_SERVICE_TOKEN в .env}
       JWT_SECRET: ${JWT_SECRET:?задайте JWT_SECRET в .env (минимум 32 символа)}
       RECEIPTS_DIR: /data/receipts
+      RATE_SOURCE: ${RATE_SOURCE:-coingecko}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     volumes:
       # Чеки игроков (Q-23, хранятся неделю). Не входят в бэкап PostgreSQL.
@@ -40,6 +41,40 @@ services:
       # Только localhost; в production API ставится за reverse proxy с HTTPS.
       - "127.0.0.1:8000:8000"
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Состояния диалогов бота переживают перезапуск (Q-15). Порт наружу не публикуется.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  bot:
+    build: ./bot
+    restart: unless-stopped
+    # У бота нет доступа к БД: только backend API по внутренней сети compose (ТЗ §3).
+    depends_on:
+      backend:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Almaty}
+      CLUB_ID: ${CLUB_ID:-692609}
+      BOT_TOKEN: ${BOT_TOKEN:?задайте BOT_TOKEN в .env (токен из @BotFather)}
+      BOT_SERVICE_TOKEN: ${BOT_SERVICE_TOKEN:?задайте BOT_SERVICE_TOKEN в .env}
+      BACKEND_URL: http://backend:8000
+      REDIS_URL: redis://redis:6379/0
+      CLUB_INVITE_URL: ${CLUB_INVITE_URL:-}
+      SUPPORT_URL: ${SUPPORT_URL:-}
+
 volumes:
   pgdata:
   receipts:
+  redisdata:
