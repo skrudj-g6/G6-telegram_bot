@@ -22,13 +22,20 @@ def newcomer(db):
 
 def test_player_endpoints_require_rights(client, auth, newcomer):
     assert client.get("/admin/v1/players").status_code == 401
-    op, _ = auth("operator", "op1")
-    assert client.get("/admin/v1/players", headers=op).status_code == 200  # просмотр
+    fin, _ = auth("finance", "fin1")
+    assert client.get("/admin/v1/players", headers=fin).status_code == 200  # просмотр
     for action in ("approve", "unblock"):
-        assert client.post(f"/admin/v1/players/{newcomer}/{action}", headers=op).status_code == 403
+        assert client.post(f"/admin/v1/players/{newcomer}/{action}", headers=fin).status_code == 403
     assert client.post(
-        f"/admin/v1/players/{newcomer}/reject", json={"reason": "нет"}, headers=op
+        f"/admin/v1/players/{newcomer}/reject", json={"reason": "нет"}, headers=fin
     ).status_code == 403
+
+
+def test_operator_works_with_players(client, auth, newcomer):
+    """Q-46: оператор подтверждает игроков наравне с заявками."""
+    op, _ = auth("operator", "op1")
+    r = client.post(f"/admin/v1/players/{newcomer}/approve", headers=op)
+    assert (r.status_code, r.json()["player"]["account_status"]) == (200, "approved")
 
 
 def test_admin_approves_player_who_can_then_use_the_cashier(client, db, auth, bot_headers, newcomer, provider):

@@ -36,7 +36,10 @@ def test_staff_endpoints_require_login(client):
 def test_permission_matrix():
     assert permissions.has_permission("owner", permissions.STAFF_MANAGE)
     assert permissions.has_permission("operator", permissions.REQUESTS_PROCESS)
-    assert not permissions.has_permission("operator", permissions.PLAYERS_MODERATE)
+    assert permissions.has_permission("operator", permissions.PLAYERS_MODERATE)
+    assert not permissions.has_permission("operator", permissions.SETTINGS_EDIT)
+    assert not permissions.has_permission("operator", permissions.STAFF_MANAGE)
+    assert not permissions.has_permission("operator", permissions.AUDIT_VIEW)
     assert not permissions.has_permission("finance", permissions.REQUESTS_PROCESS)
     assert permissions.has_permission("finance", permissions.REQUESTS_VIEW)
     assert not permissions.has_permission("unknown", permissions.PLAYERS_VIEW)

@@ -32,7 +32,10 @@ _ALL = {
 PERMISSIONS: dict[str, frozenset[str]] = {
     StaffRole.OWNER: frozenset(_ALL),
     StaffRole.ADMIN: frozenset(_ALL),
-    StaffRole.OPERATOR: frozenset({PLAYERS_VIEW, REQUESTS_VIEW, REQUESTS_PROCESS, RECEIPTS_VIEW}),
+    # Оператор работает с игроками и заявками (Q-43, Q-46); настройки, сотрудники и аудит — нет.
+    StaffRole.OPERATOR: frozenset(
+        {PLAYERS_VIEW, PLAYERS_MODERATE, REQUESTS_VIEW, REQUESTS_PROCESS, RECEIPTS_VIEW}
+    ),
     StaffRole.FINANCE: frozenset({PLAYERS_VIEW, REQUESTS_VIEW, RECEIPTS_VIEW}),
 }
 
