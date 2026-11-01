@@ -8,6 +8,9 @@ from fastapi import FastAPI
 from app import worker
 from app.api import (
     admin_auth,
+    admin_config,
+    admin_players,
+    admin_requests,
     admin_staff,
     bot_deposits,
     bot_players,
@@ -58,6 +61,9 @@ def create_app() -> FastAPI:
     app.include_router(bot_withdrawals.router)
     app.include_router(admin_auth.router)
     app.include_router(admin_staff.router)
+    app.include_router(admin_requests.router)
+    app.include_router(admin_players.router)
+    app.include_router(admin_config.router)
     return app
 
 

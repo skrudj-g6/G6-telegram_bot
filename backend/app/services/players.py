@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.validators import normalize_player_id
+from app.services import audit
 from app.models import Club, PokerAccount, PokerAccountStatus, User, UserStatus
 from app.services.errors import ServiceError
 
@@ -165,11 +166,12 @@ def _review_failure(db: Session, account_id: int) -> ServiceError:
     return ServiceError("account_not_found" if exists is None else "invalid_transition")
 
 
-def approve_poker_account(db: Session, *, account_id: int) -> PokerAccount:
+def approve_poker_account(
+    db: Session, *, account_id: int, staff_id: int | None = None, ip: str | None = None
+) -> PokerAccount:
     """Админ принимает игрока в клуб. Только из pending; повторное подтверждение — ошибка.
 
-    Условный UPDATE защищает от гонки двух админов. HTTP-доступ и запись «кто
-    подтвердил» появятся на этапе 5 вместе с авторизацией сотрудников.
+    Условный UPDATE защищает от гонки двух админов. Кто подтвердил — в журнале аудита.
     """
     result = db.execute(
         update(PokerAccount)
@@ -186,11 +188,17 @@ def approve_poker_account(db: Session, *, account_id: int) -> PokerAccount:
     if result.rowcount == 0:
         db.rollback()
         raise _review_failure(db, account_id)
+    audit.record(
+        db, staff_id=staff_id, action="player.approved", entity_type="poker_account",
+        entity_id=account_id, ip=ip,
+    )
     db.commit()
     return db.get(PokerAccount, account_id, populate_existing=True)
 
 
-def reject_poker_account(db: Session, *, account_id: int, reason: str) -> PokerAccount:
+def reject_poker_account(
+    db: Session, *, account_id: int, reason: str, staff_id: int | None = None, ip: str | None = None
+) -> PokerAccount:
     """Админ отклоняет игрока. Причина обязательна (по аналогии с ТЗ §5.2)."""
     reason = reason.strip()
     if not reason:
@@ -211,5 +219,29 @@ def reject_poker_account(db: Session, *, account_id: int, reason: str) -> PokerA
     if result.rowcount == 0:
         db.rollback()
         raise _review_failure(db, account_id)
+    audit.record(
+        db, staff_id=staff_id, action="player.rejected", entity_type="poker_account",
+        entity_id=account_id, details={"reason": reason[:500]}, ip=ip,
+    )
     db.commit()
     return db.get(PokerAccount, account_id, populate_existing=True)
+
+
+def unblock_user(db: Session, *, user_id: int, staff_id: int, ip: str | None = None) -> User:
+    """Сотрудник снимает блокировку (в том числе по Q-27). Счётчик попыток занять чужой ID
+    не обнуляется: следующая такая попытка снова заблокирует игрока."""
+    result = db.execute(
+        update(User)
+        .where(User.id == user_id, User.status == UserStatus.BLOCKED)
+        .values(status=UserStatus.ACTIVE, block_reason=None)
+    )
+    if result.rowcount == 0:
+        db.rollback()
+        if db.get(User, user_id) is None:
+            raise ServiceError("user_not_found")
+        raise ServiceError("invalid_transition")
+    audit.record(
+        db, staff_id=staff_id, action="player.unblocked", entity_type="user", entity_id=user_id, ip=ip
+    )
+    db.commit()
+    return db.get(User, user_id, populate_existing=True)
