@@ -519,3 +519,65 @@ def test_list_returns_only_own_requests_newest_first(db, provider):
     create(db, tg=2, key="key-00000003")
     listed = deposits.list_deposits(db, telegram_id=1)
     assert [r.id for r in listed] == [second.id, first.id]
+
+
+# ---------- комиссия клуба (Q-33) ----------
+
+
+def set_commission(db, direction, value):
+    from app.models import AppSetting
+    from app.services import app_settings
+
+    key = app_settings.COMMISSION_KEYS[direction]
+    row = db.get(AppSetting, key)
+    if row is None:
+        db.add(AppSetting(key=key, value=value))
+    else:
+        row.value = value
+    db.commit()
+
+
+def test_commission_is_zero_by_default(db, provider):
+    approved_player(db)
+    request, _ = create(db)
+    assert (request.commission_percent, request.commission_amount) == ("0", 0)
+
+
+def test_commission_is_snapshotted_in_request(db, provider):
+    approved_player(db)
+    set_commission(db, "deposit", "2.5")
+    request, _ = create(db, amount=10_000)
+    assert (request.commission_percent, request.commission_amount) == ("2.5", 250)
+    set_commission(db, "deposit", "10")
+    db.refresh(request)
+    assert (request.commission_percent, request.commission_amount) == ("2.5", 250)
+
+
+def test_commission_is_rounded_up_to_whole_tenge(db, provider):
+    approved_player(db)
+    set_commission(db, "deposit", "1.5")
+    request, _ = create(db, amount=1001)  # 15.015 → 16
+    assert request.commission_amount == 16
+
+
+def test_commission_applies_to_tenge_equivalent_of_crypto(db, provider, usdt_rate):
+    approved_player(db)
+    set_commission(db, "deposit", "2")
+    request, _ = create(db, method="crypto", usdt=Decimal("10"))  # 5005 ₸
+    assert request.amount == 5005
+    assert request.commission_amount == 101  # 100.1 → 101
+
+
+def test_withdrawal_commission_does_not_affect_deposits(db, provider):
+    approved_player(db)
+    set_commission(db, "withdrawal", "5")
+    request, _ = create(db)
+    assert request.commission_amount == 0
+
+
+@pytest.mark.parametrize("bad", ["-1", "51", "abc", "NaN", "1.234", ""])
+def test_invalid_commission_is_treated_as_zero(db, provider, bad):
+    approved_player(db)
+    set_commission(db, "deposit", bad)
+    request, _ = create(db)
+    assert request.commission_amount == 0

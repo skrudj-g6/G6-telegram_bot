@@ -53,6 +53,8 @@ def test_upgrade_creates_schema_and_club(migration_db):
         "withdrawal_max_amount": "2000000",
         "deposit_receipt_timeout_minutes": "10",
         "receipt_retention_days": "7",
+        "deposit_commission_percent": "0",
+        "withdrawal_commission_percent": "0",
     }
 
 

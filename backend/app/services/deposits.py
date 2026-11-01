@@ -58,6 +58,16 @@ def usdt_to_kzt(usdt: Decimal, rate: Decimal) -> int:
     return int((usdt * rate).to_integral_value(rounding=ROUND_DOWN))
 
 
+def _commission_fields(db: Session, amount: int) -> dict:
+    percent = app_settings.get_commission_percent(db, "deposit")
+    commission = app_settings.calc_commission(amount, percent)
+    return {
+        "commission_percent": format(percent.normalize(), "f"),
+        "commission_amount": commission,
+        "credit_amount": amount - commission,
+    }
+
+
 def quote_usdt(db: Session, usdt_amount: Decimal | None, now: datetime | None = None) -> dict:
     """Сколько тенге получится за введённые USDT (бот показывает это до подтверждения)."""
     usdt = _normalize_usdt(usdt_amount)
@@ -74,6 +84,7 @@ def quote_usdt(db: Session, usdt_amount: Decimal | None, now: datetime | None = 
         "min": minimum,
         "max": maximum,
         "within_limits": minimum <= kzt <= maximum,
+        **_commission_fields(db, kzt),
     }
 
 
@@ -269,6 +280,7 @@ def create_deposit(
     ):
         raise ServiceError("deposit_awaiting_receipt")
 
+    percent = app_settings.get_commission_percent(db, "deposit")
     details = requisites.get_provider().reserve(method, amount_kzt, usdt_amount=usdt)
     if details is None:
         raise ServiceError("no_requisites_available")
@@ -281,6 +293,8 @@ def create_deposit(
         amount=amount_kzt,
         crypto_amount=crypto_cents,
         exchange_rate=rate_text,
+        commission_percent=format(percent.normalize(), "f"),
+        commission_amount=app_settings.calc_commission(amount_kzt, percent),
         status=DepositStatus.AWAITING_RECEIPT,
         payment_details=details,
         idempotency_key=idempotency_key,

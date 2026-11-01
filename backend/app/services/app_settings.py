@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_UP, Decimal, InvalidOperation
 
 from sqlalchemy.orm import Session
 
@@ -110,7 +110,45 @@ def get_usdt_rate(db: Session, now: datetime | None = None) -> Decimal | None:
     return rate
 
 
-def get_limits(db: Session) -> dict[str, dict[str, int]]:
+COMMISSION_KEYS = {
+    "deposit": "deposit_commission_percent",
+    "withdrawal": "withdrawal_commission_percent",
+}
+MAX_COMMISSION_PERCENT = Decimal("50")
+
+
+def get_commission_percent(db: Session, direction: str) -> Decimal:
+    """Комиссия клуба в процентах (in = deposit, out = withdrawal), 0…50, до двух знаков.
+
+    Значение задаёт владелец в панели. Некорректное значение считается нулём и пишется в лог.
+    """
+    raw = get_str(db, COMMISSION_KEYS[direction])
+    if raw is None:
+        return Decimal(0)
+    try:
+        value = Decimal(raw.strip())
+        if (
+            value.is_finite()
+            and 0 <= value <= MAX_COMMISSION_PERCENT
+            and value.as_tuple().exponent >= -2
+        ):
+            return value
+    except InvalidOperation:
+        pass
+    logger.error("Некорректная комиссия %s, используется 0", COMMISSION_KEYS[direction])
+    return Decimal(0)
+
+
+def calc_commission(amount: int, percent: Decimal) -> int:
+    """Комиссия в целых тенге, округление вверх (в пользу клуба): зачисление округляется вниз."""
+    return int((Decimal(amount) * percent / 100).to_integral_value(rounding=ROUND_UP))
+
+
+def _fmt_percent(value: Decimal) -> str:
+    return format(value.normalize(), "f")
+
+
+def get_limits(db: Session) -> dict[str, dict]:
     return {
         "deposit": {
             "min": get_int(db, "deposit_min_amount"),
@@ -119,5 +157,9 @@ def get_limits(db: Session) -> dict[str, dict[str, int]]:
         "withdrawal": {
             "min": get_int(db, "withdrawal_min_amount"),
             "max": get_int(db, "withdrawal_max_amount"),
+        },
+        "commission": {
+            "deposit": _fmt_percent(get_commission_percent(db, "deposit")),
+            "withdrawal": _fmt_percent(get_commission_percent(db, "withdrawal")),
         },
     }

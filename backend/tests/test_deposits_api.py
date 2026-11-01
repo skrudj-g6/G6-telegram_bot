@@ -59,6 +59,7 @@ def test_limits_endpoint(client, bot_headers):
     assert response.json() == {
         "deposit": {"min": 1000, "max": 2_000_000},
         "withdrawal": {"min": 1000, "max": 2_000_000},
+        "commission": {"deposit": "0", "withdrawal": "0"},
     }
 
 
@@ -80,6 +81,9 @@ def test_create_returns_requisites(client, bot_headers, player, provider):
         "amount",
         "usdt_amount",
         "exchange_rate",
+        "commission_percent",
+        "commission_amount",
+        "credit_amount",
         "status",
         "payment_details",
         "expires_at",
@@ -345,6 +349,9 @@ def test_quote_endpoint(client, bot_headers, usdt_rate):
         "min": 1000,
         "max": 2_000_000,
         "within_limits": True,
+        "commission_percent": "0",
+        "commission_amount": 0,
+        "credit_amount": 5005,
     }
 
 
