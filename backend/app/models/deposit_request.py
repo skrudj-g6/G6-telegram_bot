@@ -66,8 +66,9 @@ class DepositRequest(Base):
     # (тенге за 1 USDT, строкой). Курс фиксируется: позже он на заявку не влияет.
     crypto_amount: Mapped[int | None] = mapped_column(BigInteger)
     exchange_rate: Mapped[str | None] = mapped_column(String(32))
-    # Комиссия клуба на пополнение (Q-33): процент на момент создания заявки и сумма в
-    # целых тенге. На игровой счёт зачисляется amount - commission_amount.
+    # Процент клуба на пополнение (Q-33/Q-34) со знаком: + бонус к фишкам, − комиссия.
+    # Процент на момент создания заявки и корректировка в целых тенге (тоже со знаком).
+    # На игровой счёт зачисляется amount + commission_amount.
     commission_percent: Mapped[str] = mapped_column(String(8), default="0", server_default="0")
     commission_amount: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     status: Mapped[str] = mapped_column(

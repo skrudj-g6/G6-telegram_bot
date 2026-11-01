@@ -40,7 +40,8 @@ class DepositOut(BaseModel):
     # Только для crypto: сколько USDT оплатить и по какому курсу посчитаны тенге.
     usdt_amount: str | None
     exchange_rate: str | None
-    # Комиссия клуба (Q-33): игрок платит amount, на счёт зачисляется credit_amount.
+    # Процент клуба (Q-33/Q-34), со знаком: + бонус, − комиссия. Игрок платит amount,
+    # на счёт зачисляется credit_amount = amount + commission_amount.
     commission_percent: str
     commission_amount: int
     credit_amount: int
@@ -65,7 +66,7 @@ class DepositOut(BaseModel):
             exchange_rate=request.exchange_rate,
             commission_percent=request.commission_percent,
             commission_amount=request.commission_amount,
-            credit_amount=request.amount - request.commission_amount,
+            credit_amount=request.amount + request.commission_amount,
             status=request.status,
             payment_details=request.payment_details if awaiting else None,
             expires_at=_utc(request.expires_at),

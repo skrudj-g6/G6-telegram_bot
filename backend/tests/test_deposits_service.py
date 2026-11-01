@@ -521,7 +521,7 @@ def test_list_returns_only_own_requests_newest_first(db, provider):
     assert [r.id for r in listed] == [second.id, first.id]
 
 
-# ---------- комиссия клуба (Q-33) ----------
+# ---------- процент клуба: + бонус, − комиссия (Q-33, Q-34) ----------
 
 
 def set_commission(db, direction, value):
@@ -545,27 +545,37 @@ def test_commission_is_zero_by_default(db, provider):
 
 def test_commission_is_snapshotted_in_request(db, provider):
     approved_player(db)
-    set_commission(db, "deposit", "2.5")
+    set_commission(db, "deposit", "-2.5")
     request, _ = create(db, amount=10_000)
-    assert (request.commission_percent, request.commission_amount) == ("2.5", 250)
+    assert (request.commission_percent, request.commission_amount) == ("-2.5", -250)
     set_commission(db, "deposit", "10")
     db.refresh(request)
-    assert (request.commission_percent, request.commission_amount) == ("2.5", 250)
+    assert (request.commission_percent, request.commission_amount) == ("-2.5", -250)
 
 
-def test_commission_is_rounded_up_to_whole_tenge(db, provider):
+def test_positive_percent_is_a_bonus(db, provider):
     approved_player(db)
+    set_commission(db, "deposit", "5")
+    request, _ = create(db, amount=10_000)
+    assert request.commission_amount == 500  # зачислится 10 500
+
+
+def test_result_is_rounded_down_to_whole_tenge(db, provider):
+    approved_player(db)
+    set_commission(db, "deposit", "-1.5")
+    request, _ = create(db, amount=1001)  # зачисление 985.985 → 985
+    assert request.commission_amount == -16
     set_commission(db, "deposit", "1.5")
-    request, _ = create(db, amount=1001)  # 15.015 → 16
-    assert request.commission_amount == 16
+    request, _ = create(db, amount=1001, key="key-00000002", now=T0 + timedelta(minutes=20))
+    assert request.commission_amount == 15  # 1016.015 → 1016
 
 
-def test_commission_applies_to_tenge_equivalent_of_crypto(db, provider, usdt_rate):
+def test_percent_applies_to_tenge_equivalent_of_crypto(db, provider, usdt_rate):
     approved_player(db)
-    set_commission(db, "deposit", "2")
+    set_commission(db, "deposit", "-2")
     request, _ = create(db, method="crypto", usdt=Decimal("10"))  # 5005 ₸
     assert request.amount == 5005
-    assert request.commission_amount == 101  # 100.1 → 101
+    assert request.commission_amount == -101  # зачисление 4904.9 → 4904
 
 
 def test_withdrawal_commission_does_not_affect_deposits(db, provider):
@@ -575,7 +585,7 @@ def test_withdrawal_commission_does_not_affect_deposits(db, provider):
     assert request.commission_amount == 0
 
 
-@pytest.mark.parametrize("bad", ["-1", "51", "abc", "NaN", "1.234", ""])
+@pytest.mark.parametrize("bad", ["-51", "51", "abc", "NaN", "1.234", ""])
 def test_invalid_commission_is_treated_as_zero(db, provider, bad):
     approved_player(db)
     set_commission(db, "deposit", bad)

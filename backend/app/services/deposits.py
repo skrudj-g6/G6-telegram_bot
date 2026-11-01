@@ -64,7 +64,7 @@ def _commission_fields(db: Session, amount: int) -> dict:
     return {
         "commission_percent": format(percent.normalize(), "f"),
         "commission_amount": commission,
-        "credit_amount": amount - commission,
+        "credit_amount": amount + commission,
     }
 
 

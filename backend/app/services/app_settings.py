@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timedelta, timezone
-from decimal import ROUND_UP, Decimal, InvalidOperation
+from decimal import ROUND_DOWN, Decimal, InvalidOperation
 
 from sqlalchemy.orm import Session
 
@@ -114,11 +114,13 @@ COMMISSION_KEYS = {
     "deposit": "deposit_commission_percent",
     "withdrawal": "withdrawal_commission_percent",
 }
-MAX_COMMISSION_PERCENT = Decimal("50")
+MAX_COMMISSION_PERCENT = Decimal("50")  # допустимо от -50 до +50
 
 
 def get_commission_percent(db: Session, direction: str) -> Decimal:
-    """Комиссия клуба в процентах (in = deposit, out = withdrawal), 0…50, до двух знаков.
+    """Процент клуба (in = deposit, out = withdrawal), от -50 до +50, до двух знаков.
+
+    Плюс — бонус игроку (больше фишек / больше тенге), минус — комиссия (меньше).
 
     Значение задаёт владелец в панели. Некорректное значение считается нулём и пишется в лог.
     """
@@ -129,7 +131,7 @@ def get_commission_percent(db: Session, direction: str) -> Decimal:
         value = Decimal(raw.strip())
         if (
             value.is_finite()
-            and 0 <= value <= MAX_COMMISSION_PERCENT
+            and -MAX_COMMISSION_PERCENT <= value <= MAX_COMMISSION_PERCENT
             and value.as_tuple().exponent >= -2
         ):
             return value
@@ -140,8 +142,12 @@ def get_commission_percent(db: Session, direction: str) -> Decimal:
 
 
 def calc_commission(amount: int, percent: Decimal) -> int:
-    """Комиссия в целых тенге, округление вверх (в пользу клуба): зачисление округляется вниз."""
-    return int((Decimal(amount) * percent / 100).to_integral_value(rounding=ROUND_UP))
+    """Корректировка суммы в целых тенге со знаком: итог = amount + результат.
+
+    Итог округляется вниз (в пользу клуба): и бонус, и комиссия считаются в целых тенге.
+    """
+    credit = int((Decimal(amount) * (100 + percent) / 100).to_integral_value(rounding=ROUND_DOWN))
+    return credit - amount
 
 
 def _fmt_percent(value: Decimal) -> str:
