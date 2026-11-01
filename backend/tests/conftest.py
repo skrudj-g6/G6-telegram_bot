@@ -96,3 +96,34 @@ def _clean_receipts():
 
     yield
     shutil.rmtree(Path(os.environ["RECEIPTS_DIR"]), ignore_errors=True)
+
+
+class FakeCryptoPayout:
+    def __init__(self):
+        self.calls = []
+
+    def start(self, amount):
+        self.calls.append(amount)
+        return {"psp_ref": "TEST-1", "amount": amount}
+
+
+@pytest.fixture
+def crypto_payout(monkeypatch):
+    """Подключает PSP для вывода криптой; без фикстуры PSP недоступен (Q-31)."""
+    from app.services import crypto_payout as module
+
+    fake = FakeCryptoPayout()
+    monkeypatch.setattr(module, "_provider", fake)
+    return fake
+
+
+@pytest.fixture
+def banks(db):
+    """Банки как после миграции (Q-28); в тестах схема создаётся без миграций."""
+    from app.models import Bank
+
+    names = ["Kaspi Bank", "Halyk Bank", "Банк ЦентрКредит", "ForteBank", "Freedom Bank Kazakhstan"]
+    rows = [Bank(name=n, sort_order=i) for i, n in enumerate(names, start=1)]
+    db.add_all(rows)
+    db.commit()
+    return {row.name: row.id for row in rows}

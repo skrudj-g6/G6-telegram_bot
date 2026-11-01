@@ -97,3 +97,21 @@ def test_downgrade_removes_tables(migration_db):
     command.downgrade(config, "base")
     engine = create_engine(migration_db)
     assert set(inspect(engine).get_table_names()) <= {"alembic_version"}
+
+
+def test_banks_are_seeded_by_migration(migration_db):
+    command.upgrade(alembic_config(), "head")
+    with create_engine(migration_db).connect() as conn:
+        rows = conn.execute(text("SELECT name FROM banks ORDER BY sort_order")).all()
+    assert [r[0] for r in rows] == [
+        "Kaspi Bank", "Halyk Bank", "Банк ЦентрКредит", "ForteBank", "Freedom Bank Kazakhstan",
+    ]
+
+
+def test_downgrade_one_step_removes_withdrawals_only(migration_db):
+    config = alembic_config()
+    command.upgrade(config, "head")
+    command.downgrade(config, "0005")
+    tables = set(inspect(create_engine(migration_db)).get_table_names())
+    assert {"deposit_requests", "app_settings"} <= tables
+    assert not {"banks", "withdrawal_requests", "withdrawal_status_history"} & tables

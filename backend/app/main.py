@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import worker
-from app.api import bot_deposits, bot_players, health
+from app.api import bot_deposits, bot_players, bot_withdrawals, health
 from app.api.errors import register_error_handlers
 from app.core.config import get_settings
 from app.core.logging import setup_logging
@@ -37,7 +37,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
         title="Altyn Crown API",
-        version="0.3.0",
+        version="0.4.0",
         lifespan=lifespan,
         # В production документация API не публикуется.
         docs_url=None if settings.is_production else "/docs",
@@ -48,6 +48,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(bot_players.router)
     app.include_router(bot_deposits.router)
+    app.include_router(bot_withdrawals.router)
     return app
 
 
