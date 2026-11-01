@@ -90,3 +90,13 @@ alembic revision --autogenerate -m "описание"
 ## Секреты
 
 Секреты хранятся только в `.env` (в `.gitignore`). Токены Telegram, пароли и ключи в репозиторий не попадают.
+
+## Сотрудники (этап 5)
+
+Первого Owner создаёт администратор сервера в терминале (пароль спросят, в историю он не попадёт):
+
+```
+docker compose exec backend python -m app.cli create-staff --login owner --name "Имя" --role owner
+```
+
+Дальше сотрудников создаёт Owner (любые роли) или Admin (только operator и finance) через `POST /admin/v1/staff`. Вход: `POST /admin/v1/auth/login` → access-токен (15 минут) в ответе и refresh-токен в httpOnly-cookie (7 дней, ротация). Нужен `JWT_SECRET` (не короче 32 символов). После 5 неверных паролей вход блокируется на 15 минут. Все действия сотрудников пишутся в журнал аудита.

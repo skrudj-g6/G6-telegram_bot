@@ -10,6 +10,7 @@ os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///{_TMP_DIR}/test.db"
 os.environ["RECEIPTS_DIR"] = f"{_TMP_DIR}/receipts"
 os.environ["BACKGROUND_JOBS_ENABLED"] = "false"  # таймер в тестах вызывается вручную
 os.environ["BOT_SERVICE_TOKEN"] = BOT_TOKEN
+os.environ["JWT_SECRET"] = "test-jwt-secret-0123456789abcdef0123456789"
 os.environ["CLUB_ID"] = "692609"
 os.environ["APP_ENV"] = "test"
 os.environ["APP_TIMEZONE"] = "Asia/Almaty"
@@ -127,3 +128,44 @@ def banks(db):
     db.add_all(rows)
     db.commit()
     return {row.name: row.id for row in rows}
+
+
+PASSWORD = "correct-horse-battery"
+
+
+@pytest.fixture
+def make_staff(db):
+    """Создаёт сотрудника напрямую (минуя API): make_staff("operator", login="op1")."""
+    from app.models import StaffUser
+    from app.core import security
+
+    def factory(role="operator", login=None, password=PASSWORD, active=True):
+        login = login or f"{role}-{db.query(StaffUser).count() + 1}"
+        staff = StaffUser(
+            login=login,
+            display_name=login.title(),
+            role=role,
+            password_hash=security.hash_password(password),
+            is_active=active,
+        )
+        db.add(staff)
+        db.commit()
+        return staff
+
+    return factory
+
+
+@pytest.fixture
+def auth(client, make_staff):
+    """Вход сотрудника: auth("admin") -> заголовки с access-токеном (и сам сотрудник)."""
+
+    def login(role="operator", login=None):
+        staff = make_staff(role, login=login)
+        response = client.post(
+            "/admin/v1/auth/login", json={"login": staff.login, "password": PASSWORD}
+        )
+        assert response.status_code == 200, response.text
+        headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
+        return headers, staff
+
+    return login

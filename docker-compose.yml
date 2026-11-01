@@ -27,6 +27,7 @@ services:
       APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Almaty}
       CLUB_ID: ${CLUB_ID:-692609}
       BOT_SERVICE_TOKEN: ${BOT_SERVICE_TOKEN:?задайте BOT_SERVICE_TOKEN в .env}
+      JWT_SECRET: ${JWT_SECRET:?задайте JWT_SECRET в .env (минимум 32 символа)}
       RECEIPTS_DIR: /data/receipts
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     volumes:

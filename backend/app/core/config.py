@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     database_url: str
     # Секрет внутренней авторизации бот → backend (D-3). Только из ENV.
     bot_service_token: str
+    # Секрет подписи access-токенов сотрудников (D-4). Только из ENV, минимум 32 символа.
+    jwt_secret: str
+    access_token_minutes: int = 15
+    refresh_token_days: int = 7
     # Код клуба в покерном приложении (ТЗ §2).
     club_id: str = "692609"
     # Каталог для чеков игроков (Q-23). В Docker — отдельный том.
@@ -36,6 +40,13 @@ class Settings(BaseSettings):
         if source not in {"coingecko", "none"}:
             raise ValueError(f"Неизвестный источник курса: {value!r}")
         return source
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def _check_jwt_secret(cls, value: str) -> str:
+        if len(value) < 32:
+            raise ValueError("JWT_SECRET слишком короткий (минимум 32 символа)")
+        return value
 
     @field_validator("bot_service_token")
     @classmethod
