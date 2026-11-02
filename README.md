@@ -103,7 +103,7 @@ docker compose exec backend python -m app.cli create-staff --login owner --name 
 
 ## Telegram-бот (этап 6)
 
-Бот (`bot/`, aiogram 3) не имеет доступа к БД: все данные берёт у backend по внутреннему API с `BOT_SERVICE_TOKEN`. Состояния диалогов хранятся в Redis и переживают перезапуск. Запуск вместе со всем: `docker compose up --build`. В `.env` нужны `BOT_TOKEN` (новый токен из @BotFather), `BOT_SERVICE_TOKEN`, `JWT_SECRET`; по желанию `CLUB_INVITE_URL`, `SUPPORT_URL`.
+Бот (`bot/`, aiogram 3) не имеет доступа к БД: все данные берёт у backend по внутреннему API с `BOT_SERVICE_TOKEN`. Состояния диалогов хранятся в Redis и переживают перезапуск. Запуск вместе со всем: `docker compose up --build`. В `.env` нужны `BOT_TOKEN` (новый токен из @BotFather), `BOT_SERVICE_TOKEN`, `JWT_SECRET`; по желанию `CLUB_INVITE_URL`, `SUPPORT_URL` (ссылка на аккаунт админа в Telegram), `JOIN_DELAY_SECONDS`.
 
 Сценарии: `/start` (зарегистрированного игрока не ведём по воронке повторно), регистрация игрового ID с подсказкой «где найти ID», пополнение тенге или USDT (курс и сумма в тенге показываются до подтверждения), чек фото или PDF в ответ на заявку, вывод (сумма, имя, банк), «Мои заявки» с отменой, профиль, поддержка. Пока платёжка и PSP не подключены, бот отвечает «нет свободных реквизитов, обратитесь через 10 минут».
 

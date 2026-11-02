@@ -22,8 +22,11 @@ NOT_TEXT_INPUT = ~F.text
 def main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=BTN_DEPOSIT), KeyboardButton(text=BTN_WITHDRAW)],
-            [KeyboardButton(text=BTN_REQUESTS), KeyboardButton(text=BTN_PROFILE)],
+            [
+                KeyboardButton(text=BTN_DEPOSIT, style="success"),
+                KeyboardButton(text=BTN_WITHDRAW, style="danger"),
+            ],
+            [KeyboardButton(text=BTN_REQUESTS), KeyboardButton(text=BTN_PROFILE, style="primary")],
             [KeyboardButton(text=BTN_SUPPORT)],
         ],
         resize_keyboard=True,
@@ -34,23 +37,31 @@ def _rows(*rows: list[InlineKeyboardButton]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=list(rows))
 
 
-def button(text: str, data: str) -> InlineKeyboardButton:
-    return InlineKeyboardButton(text=text, callback_data=data)
+# Цвета кнопок (Q-50): success — зелёный, danger — красный, primary — синий.
+SUCCESS, DANGER, PRIMARY = "success", "danger", "primary"
+
+
+def button(text: str, data: str, style: str | None = None) -> InlineKeyboardButton:
+    return InlineKeyboardButton(text=text, callback_data=data, style=style)
 
 
 def url_button(text: str, url: str) -> InlineKeyboardButton:
     return InlineKeyboardButton(text=text, url=url)
 
 
-CANCEL_FLOW = button("✖️ Отмена", "flow:cancel")
+CANCEL_FLOW = button("✖️ Отмена", "flow:cancel", DANGER)
 
 
-def onboarding(invite_url: str) -> InlineKeyboardMarkup:
-    rows = []
-    if invite_url:
-        rows.append([url_button("🚀 Открыть клуб", invite_url)])
-    rows.append([button("2️⃣ Регистрация в кассе", "reg:start")])
-    return _rows(*rows)
+def onboarding() -> InlineKeyboardMarkup:
+    return _rows([button("1️⃣ ВСТУПИТЬ В КЛУБ", "club:join", SUCCESS)])
+
+
+def open_club(invite_url: str) -> InlineKeyboardMarkup:
+    return _rows([url_button("🚀 ОТКРЫТЬ КЛУБ", invite_url)])
+
+
+def register_in_cashier() -> InlineKeyboardMarkup:
+    return _rows([button("2️⃣ Регистрация в кассе", "reg:start", PRIMARY)])
 
 
 def id_help(support_url: str) -> InlineKeyboardMarkup:
@@ -61,31 +72,31 @@ def id_help(support_url: str) -> InlineKeyboardMarkup:
 
 
 def retry_id() -> InlineKeyboardMarkup:
-    return _rows([button("Ввести игровой ID", "reg:start")])
+    return _rows([button("Ввести игровой ID", "reg:start", SUCCESS)])
 
 
 def where_next() -> InlineKeyboardMarkup:
-    return _rows([button("Продолжить", "reg:where2")])
+    return _rows([button("Продолжить", "reg:where2", PRIMARY)])
 
 
 def deposit_methods() -> InlineKeyboardMarkup:
     return _rows(
-        [button("💳 Тенге", "dep:m:fiat")],
-        [button("🪙 Криптовалюта (USDT)", "dep:m:crypto")],
+        [button("💳 Тенге", "dep:m:fiat", SUCCESS)],
+        [button("🪙 Криптовалюта (USDT)", "dep:m:crypto", PRIMARY)],
         [CANCEL_FLOW],
     )
 
 
 def withdrawal_methods() -> InlineKeyboardMarkup:
     return _rows(
-        [button("💳 Тенге", "wd:m:fiat")],
-        [button("🪙 Криптовалюта (USDT)", "wd:m:crypto")],
+        [button("💳 Тенге", "wd:m:fiat", SUCCESS)],
+        [button("🪙 Криптовалюта (USDT)", "wd:m:crypto", PRIMARY)],
         [CANCEL_FLOW],
     )
 
 
 def confirm(data: str, text: str = "✅ Подтвердить") -> InlineKeyboardMarkup:
-    return _rows([button(text, data)], [CANCEL_FLOW])
+    return _rows([button(text, data, SUCCESS)], [CANCEL_FLOW])
 
 
 def cancel_only() -> InlineKeyboardMarkup:
@@ -99,7 +110,7 @@ def banks(items: list[dict]) -> InlineKeyboardMarkup:
 def request_actions(kind: str, request_id: int, cancellable: bool) -> InlineKeyboardMarkup | None:
     if not cancellable:
         return None
-    return _rows([button("❌ Отменить заявку", f"cancel:{kind}:{request_id}")])
+    return _rows([button("❌ Отменить заявку", f"cancel:{kind}:{request_id}", DANGER)])
 
 
 def request_list(items: list[tuple[str, int, str]]) -> InlineKeyboardMarkup:

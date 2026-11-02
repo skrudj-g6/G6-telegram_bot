@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from pathlib import Path
 
@@ -28,6 +29,24 @@ INSTRUCTION = (
 
 class Registration(StatesGroup):
     waiting_id = State()
+
+
+@router.callback_query(F.data == "club:join")
+async def club_join(call: CallbackQuery, config: Config):
+    """Шаг 1: ссылка на клуб. Кнопка регистрации появляется после паузы, чтобы игрок успел
+    вступить в клуб (Q-49)."""
+    await call.answer()
+    if config.club_invite_url:
+        await call.message.answer(
+            "🔗 Перейдите по ссылке и вступите в клуб:",
+            reply_markup=keyboards.open_club(config.club_invite_url),
+        )
+    else:
+        logger.warning("CLUB_INVITE_URL не задан: ссылка на клуб не показана")
+    await asyncio.sleep(config.join_delay_seconds)
+    await call.message.answer(
+        "⏳ Теперь доступна регистрация:", reply_markup=keyboards.register_in_cashier()
+    )
 
 
 @router.callback_query(F.data == "reg:start")

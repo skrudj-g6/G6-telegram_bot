@@ -16,6 +16,13 @@ def _required(env: dict, name: str) -> str:
     return value
 
 
+def _delay(env: dict) -> int:
+    raw = (env.get("JOIN_DELAY_SECONDS") or "10").strip()
+    if not raw.isdigit() or int(raw) > 300:
+        raise ConfigError("JOIN_DELAY_SECONDS должен быть числом от 0 до 300")
+    return int(raw)
+
+
 @dataclass(frozen=True)
 class Config:
     bot_token: str
@@ -25,6 +32,7 @@ class Config:
     club_id: str
     club_invite_url: str
     support_url: str  # пусто — кнопка «Поддержка» без ссылки
+    join_delay_seconds: int  # пауза между ссылкой на клуб и кнопкой регистрации (Q-49)
     timezone: ZoneInfo
 
     @classmethod
@@ -46,5 +54,6 @@ class Config:
             club_id=(env.get("CLUB_ID") or "692609").strip(),
             club_invite_url=(env.get("CLUB_INVITE_URL") or "").strip(),
             support_url=(env.get("SUPPORT_URL") or "").strip(),
+            join_delay_seconds=_delay(env),
             timezone=tz,
         )

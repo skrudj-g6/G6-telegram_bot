@@ -73,6 +73,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       CLUB_INVITE_URL: ${CLUB_INVITE_URL:-}
       SUPPORT_URL: ${SUPPORT_URL:-}
+      JOIN_DELAY_SECONDS: ${JOIN_DELAY_SECONDS:-10}
 
 volumes:
   pgdata:

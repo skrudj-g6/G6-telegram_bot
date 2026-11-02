@@ -25,7 +25,7 @@ async def show_entry(message: Message, user: dict, config: Config) -> bool:
             "1️⃣ Вступить в клуб\n"
             "2️⃣ Пройти регистрацию в кассе\n\n"
             "Выберите действие:",
-            reply_markup=keyboards.onboarding(config.club_invite_url),
+            reply_markup=keyboards.onboarding(),
         )
         return False
     if account["status"] == "pending":

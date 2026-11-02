@@ -28,3 +28,11 @@ def test_short_service_token_and_bad_timezone_are_rejected():
 def test_trailing_slash_is_removed_and_values_trimmed():
     config = Config.from_env({**BASE, "BACKEND_URL": " http://b:1/ ", "SUPPORT_URL": " https://t.me/x "})
     assert config.backend_url == "http://b:1" and config.support_url == "https://t.me/x"
+
+
+def test_join_delay_defaults_to_ten_seconds_and_is_validated():
+    assert Config.from_env(dict(BASE)).join_delay_seconds == 10
+    assert Config.from_env({**BASE, "JOIN_DELAY_SECONDS": "0"}).join_delay_seconds == 0
+    for bad in ("-1", "abc", "301", "1.5"):
+        with pytest.raises(ConfigError):
+            Config.from_env({**BASE, "JOIN_DELAY_SECONDS": bad})
