@@ -9,7 +9,7 @@ import asyncio
 import logging
 
 from app.db.session import get_session_factory
-from app.services import deposits, rates
+from app.services import deposits, notifications, rates
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,9 @@ def run_once(*, cleanup: bool, refresh_rate: bool = False) -> None:
             removed = deposits.cleanup_receipts(db)
             if removed:
                 logger.info("Удалено чеков по сроку хранения: %s", removed)
+            old = notifications.cleanup(db)
+            if old:
+                logger.info("Удалено старых уведомлений: %s", old)
 
     if refresh_rate:
         # Сбой источника курса не должен мешать закрытию заявок, поэтому отдельно.

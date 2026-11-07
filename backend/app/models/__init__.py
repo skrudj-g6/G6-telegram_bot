@@ -5,6 +5,7 @@ from app.models.bank import Bank
 from app.models.club import Club
 from app.models.deposit_request import DepositMethod, DepositRequest, DepositStatus
 from app.models.deposit_status_history import DepositStatusHistory
+from app.models.notification import Notification
 from app.models.poker_account import PokerAccount, PokerAccountStatus
 from app.models.staff import StaffRole, StaffSession, StaffUser
 from app.models.user import User, UserStatus
@@ -20,6 +21,7 @@ __all__ = [
     "DepositRequest",
     "DepositStatus",
     "DepositStatusHistory",
+    "Notification",
     "PokerAccount",
     "PokerAccountStatus",
     "StaffRole",

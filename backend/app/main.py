@@ -13,6 +13,7 @@ from app.api import (
     admin_requests,
     admin_staff,
     bot_deposits,
+    bot_notifications,
     bot_players,
     bot_withdrawals,
     health,
@@ -47,7 +48,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
         title="Altyn Crown API",
-        version="0.5.0",
+        version="0.6.0",
         lifespan=lifespan,
         # В production документация API не публикуется.
         docs_url=None if settings.is_production else "/docs",
@@ -59,6 +60,7 @@ def create_app() -> FastAPI:
     app.include_router(bot_players.router)
     app.include_router(bot_deposits.router)
     app.include_router(bot_withdrawals.router)
+    app.include_router(bot_notifications.router)
     app.include_router(admin_auth.router)
     app.include_router(admin_staff.router)
     app.include_router(admin_requests.router)

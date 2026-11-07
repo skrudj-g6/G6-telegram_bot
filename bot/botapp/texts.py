@@ -236,3 +236,48 @@ def error_text(code: str, extra: dict | None = None) -> str:
             "Проверьте ID. При повторной попытке доступ к боту будет закрыт."
         )
     return _ERRORS.get(code, GENERIC_ERROR)
+
+
+# --- Уведомления о смене статуса (этап 7) -------------------------------------------
+
+
+def render_notification(item: dict) -> tuple[str, str | None] | None:
+    """Текст уведомления и тип клавиатуры (None, "menu", "retry_id"). None — тип неизвестен
+    (например, backend новее бота): такое уведомление не отправляем, а закрываем."""
+    kind, p = item["kind"], item["payload"]
+    reason = f"\nПричина: {e(p['reason'])}" if p.get("reason") else ""
+    if kind == "deposit":
+        status = p["status"]
+        if status == "completed":
+            return (
+                f"✅ <b>Пополнение №{p['id']} выполнено.</b>\n"
+                f"На игровой счёт зачислено: <b>{money(p['credit_amount'])}</b>.",
+                None,
+            )
+        if status == "rejected":
+            return f"❌ <b>Пополнение №{p['id']} отклонено.</b>{reason}", None
+        if status == "expired":
+            return (
+                f"⌛ Время на отправку чека по заявке №{p['id']} вышло, заявка закрыта.\n"
+                "Если вы уже оплатили, свяжитесь с поддержкой. Для нового пополнения создайте заявку заново.",
+                None,
+            )
+    if kind == "withdrawal":
+        status = p["status"]
+        if status == "completed":
+            return (
+                f"✅ <b>Вывод №{p['id']} выполнен.</b>\n"
+                f"Сумма к получению: <b>{money(p['payout_amount'])}</b>.",
+                None,
+            )
+        if status == "rejected":
+            return f"❌ <b>Вывод №{p['id']} отклонён.</b>{reason}", None
+    if kind == "account":
+        status = p["status"]
+        if status == "approved":
+            return "🎉 <b>Вас приняли в клуб!</b>\nКасса доступна: пополнение и вывод в меню ниже.", "menu"
+        if status == "rejected":
+            return f"❌ <b>Администратор отклонил ваш игровой ID.</b>{reason}\n\nМожно ввести ID заново.", "retry_id"
+        if status == "unblocked":
+            return "✅ Доступ к боту восстановлен. Отправьте /start.", None
+    return None

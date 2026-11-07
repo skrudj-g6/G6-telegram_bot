@@ -115,3 +115,45 @@ def test_withdrawal_summary_and_card():
 def test_request_line():
     line = texts.request_line("dep", deposit(), TZ)
     assert "№7" in line and "Ожидает чек" in line
+
+
+# ---------- уведомления ----------
+
+
+def note(kind, **payload):
+    return {"id": 1, "kind": kind, "telegram_id": 5, "payload": payload}
+
+
+def test_notification_texts():
+    done, markup = texts.render_notification(
+        note("deposit", id=7, status="completed", amount=5000, credit_amount=5150, reason=None)
+    )
+    assert "№7" in done and "5 150" in done and markup is None
+    rejected, _ = texts.render_notification(
+        note("deposit", id=7, status="rejected", amount=5000, credit_amount=5000, reason="Чек <не> читается")
+    )
+    assert "отклонено" in rejected and "&lt;не&gt;" in rejected
+    expired, _ = texts.render_notification(
+        note("deposit", id=7, status="expired", amount=5000, credit_amount=5000, reason=None)
+    )
+    assert "вышло" in expired
+    wd, _ = texts.render_notification(
+        note("withdrawal", id=3, status="completed", amount=10000, payout_amount=9750, reason=None)
+    )
+    assert "Вывод №3 выполнен" in wd and "9 750" in wd
+    wr, _ = texts.render_notification(
+        note("withdrawal", id=3, status="rejected", amount=10000, payout_amount=9750, reason="Нет средств")
+    )
+    assert "отклонён" in wr and "Нет средств" in wr
+
+
+def test_account_notifications_choose_keyboard():
+    assert texts.render_notification(note("account", status="approved", reason=None))[1] == "menu"
+    text, markup = texts.render_notification(note("account", status="rejected", reason="Вас нет в клубе"))
+    assert markup == "retry_id" and "Вас нет в клубе" in text
+    assert texts.render_notification(note("account", status="unblocked", reason=None))[1] is None
+
+
+def test_unknown_notification_is_not_rendered():
+    assert texts.render_notification(note("promo", status="x")) is None
+    assert texts.render_notification(note("deposit", id=1, status="processing")) is None

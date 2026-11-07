@@ -92,3 +92,22 @@ def test_crypto_amount_is_sent_as_string():
 
     run(client_with(handler).create_deposit(5, method="crypto", usdt_amount="12.50", key="k" * 8))
     assert b'"usdt_amount":"12.50"' in seen["body"].replace(b" ", b"")
+
+
+def test_notification_calls_and_empty_204_body():
+    calls = []
+
+    def handler(request):
+        calls.append((request.method, request.url.path, request.content))
+        if request.url.path.endswith("/claim"):
+            return httpx.Response(200, json=[{"id": 1}])
+        return httpx.Response(204)
+
+    api = client_with(handler)
+    assert run(api.claim_notifications(5)) == [{"id": 1}]
+    assert run(api.notification_sent(1)) is None
+    run(api.notification_failed(1, permanent=False, error="x" * 300, retry_after=30))
+    assert calls[1][1] == "/bot/v1/notifications/1/sent"
+    body = calls[2][2].replace(b" ", b"")
+    assert b'"permanent":false' in body and b'"retry_after_seconds":30' in body
+    assert len(body) < 200  # ошибка обрезана

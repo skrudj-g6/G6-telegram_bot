@@ -37,6 +37,7 @@ STATUS_BY_CODE = {
     "last_owner": 409,
     "receipt_not_available": 404,
     "bank_not_found": 404,
+    "notification_not_found": 404,
     "bank_exists": 409,
     "invalid_bank_data": 422,
     "invalid_setting": 422,

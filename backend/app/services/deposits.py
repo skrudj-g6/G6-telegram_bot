@@ -26,7 +26,7 @@ from app.models import (
     User,
     UserStatus,
 )
-from app.services import app_settings, players, receipt_storage, requisites
+from app.services import app_settings, notifications, players, receipt_storage, requisites
 from app.services.errors import ServiceError
 
 logger = logging.getLogger(__name__)
@@ -161,6 +161,7 @@ def _expire_one(db: Session, request_id: int, now: datetime) -> bool:
         "system",
         comment="Чек не прислан за отведённое время",
     )
+    notifications.notify_deposit(db, db.get(DepositRequest, request_id, populate_existing=True))
     db.commit()
     return True
 

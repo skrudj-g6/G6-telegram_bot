@@ -24,7 +24,7 @@ from app.models import (
     WithdrawalStatus,
     WithdrawalStatusHistory,
 )
-from app.services import audit
+from app.services import audit, notifications
 from app.services.errors import ServiceError
 
 MAX_REASON = 500
@@ -116,8 +116,12 @@ def _move(
         details={"from": from_status, "to": to_status, **({"reason": comment} if action == "reject" else {})},
         ip=ip,
     )
+    updated = _load(db, kind, request_id)
+    if to_status in (kind.completed, kind.rejected):  # «взято в работу» игрока не тревожит
+        notify = notifications.notify_deposit if kind is DEPOSIT else notifications.notify_withdrawal
+        notify(db, updated)
     db.commit()
-    return _load(db, kind, request_id)
+    return updated
 
 
 def take(db: Session, kind: Kind, request_id: int, staff: StaffUser, ip: str | None = None):

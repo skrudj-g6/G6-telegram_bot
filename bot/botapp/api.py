@@ -33,7 +33,7 @@ class BackendClient:
         except httpx.HTTPError as exc:
             raise ApiUnavailable(type(exc).__name__) from exc
         if response.status_code < 400:
-            return response.json()
+            return None if response.status_code == 204 else response.json()
         try:
             detail = response.json().get("detail")
         except (ValueError, AttributeError):
@@ -44,6 +44,27 @@ class BackendClient:
         if response.status_code == 422:
             raise ApiError("validation_error", 422)
         raise ApiUnavailable(f"HTTP {response.status_code}")
+
+    # --- Очередь уведомлений (этап 7) ---
+
+    async def claim_notifications(self, limit: int = 20) -> list[dict]:
+        return await self._request("POST", "/bot/v1/notifications/claim", params={"limit": limit})
+
+    async def notification_sent(self, notification_id: int) -> None:
+        await self._request("POST", f"/bot/v1/notifications/{notification_id}/sent")
+
+    async def notification_failed(
+        self,
+        notification_id: int,
+        *,
+        permanent: bool,
+        error: str = "",
+        retry_after: int | None = None,
+    ) -> None:
+        body: dict = {"permanent": permanent, "error": error[:100]}
+        if retry_after is not None:
+            body["retry_after_seconds"] = retry_after
+        await self._request("POST", f"/bot/v1/notifications/{notification_id}/failed", json=body)
 
     # --- Игрок ---
 

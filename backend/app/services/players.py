@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.validators import normalize_player_id
-from app.services import audit
+from app.services import audit, notifications
 from app.models import Club, PokerAccount, PokerAccountStatus, User, UserStatus
 from app.services.errors import ServiceError
 
@@ -192,8 +192,10 @@ def approve_poker_account(
         db, staff_id=staff_id, action="player.approved", entity_type="poker_account",
         entity_id=account_id, ip=ip,
     )
+    account = db.get(PokerAccount, account_id, populate_existing=True)
+    notifications.notify_account(db, account.user_id, "approved")
     db.commit()
-    return db.get(PokerAccount, account_id, populate_existing=True)
+    return account
 
 
 def reject_poker_account(
@@ -223,8 +225,10 @@ def reject_poker_account(
         db, staff_id=staff_id, action="player.rejected", entity_type="poker_account",
         entity_id=account_id, details={"reason": reason[:500]}, ip=ip,
     )
+    account = db.get(PokerAccount, account_id, populate_existing=True)
+    notifications.notify_account(db, account.user_id, "rejected", reason[:500])
     db.commit()
-    return db.get(PokerAccount, account_id, populate_existing=True)
+    return account
 
 
 def unblock_user(db: Session, *, user_id: int, staff_id: int, ip: str | None = None) -> User:
@@ -243,5 +247,6 @@ def unblock_user(db: Session, *, user_id: int, staff_id: int, ip: str | None = N
     audit.record(
         db, staff_id=staff_id, action="player.unblocked", entity_type="user", entity_id=user_id, ip=ip
     )
+    notifications.notify_account(db, user_id, "unblocked")
     db.commit()
     return db.get(User, user_id, populate_existing=True)

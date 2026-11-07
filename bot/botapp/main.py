@@ -9,7 +9,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import ErrorEvent
 
-from botapp import texts
+from botapp import notifier, texts
 from botapp.api import ApiError, ApiUnavailable, BackendClient
 from botapp.config import Config
 from botapp.handlers import deposit, receipts, registration, requests, start, withdraw
@@ -71,9 +71,12 @@ async def main() -> None:
     bot = Bot(token=config.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = build_dispatcher(config, api)
     logger.info("Бот запущен (club=%s)", config.club_id)
+    delivery = asyncio.create_task(notifier.run_forever(bot, api), name="notifications")
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
+        delivery.cancel()
+        await asyncio.gather(delivery, return_exceptions=True)
         await api.aclose()
         await bot.session.close()
 
