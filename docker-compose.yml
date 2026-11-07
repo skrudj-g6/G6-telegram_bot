@@ -75,6 +75,16 @@ services:
       SUPPORT_URL: ${SUPPORT_URL:-}
       JOIN_DELAY_SECONDS: ${JOIN_DELAY_SECONDS:-10}
 
+  admin:
+    build: ./admin
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      # Только localhost; наружу панель выставляется через reverse proxy с HTTPS.
+      - "127.0.0.1:8080:80"
+
 volumes:
   pgdata:
   receipts:
