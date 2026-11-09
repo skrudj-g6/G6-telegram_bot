@@ -23,7 +23,7 @@ test("login stores token and sends it in Authorization", async () => {
 
 test("login error becomes ApiError with code and extras", async () => {
   const client = createClient(async () => json(401, { detail: { code: "invalid_credentials" } }));
-  await assert.rejects(client.login("a", "x"), (e: ApiError) => e.code === "invalid_credentials" && e.status === 401);
+  await assert.rejects(client.login("a", "x"), (e: unknown) => e instanceof ApiError && e.code === "invalid_credentials" && e.status === 401);
 });
 
 test("401 triggers a single refresh and the request is retried", async () => {
