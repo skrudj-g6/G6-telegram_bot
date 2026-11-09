@@ -126,7 +126,9 @@ def link_poker_account(db: Session, *, telegram_id: int, raw_player_id: str) -> 
         raise ServiceError("user_blocked")
 
     club = _get_club(db)
-    account = user.poker_account
+    # Явный запрос, а не user.poker_account: сессия живёт с expire_on_commit=False, и кэш связи
+    # после первой привязки в той же сессии остался бы пустым (вторая привязка упала бы на UNIQUE).
+    account = db.scalar(select(PokerAccount).where(PokerAccount.user_id == user.id))
 
     if account is not None and account.status == PokerAccountStatus.APPROVED:
         raise ServiceError("account_locked")

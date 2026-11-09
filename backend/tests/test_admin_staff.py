@@ -59,8 +59,8 @@ def test_owner_creates_any_role_and_it_is_audited(client, db, auth):
 
 def test_admin_cannot_create_owner_or_admin(client, auth):
     headers, _ = auth("admin", "adm1")
-    assert create(client, headers, role="operator", login="u1").status_code == 201
-    assert create(client, headers, role="finance", login="u2").status_code == 201
+    assert create(client, headers, role="operator", login="user1").status_code == 201
+    assert create(client, headers, role="finance", login="user2").status_code == 201
     for role in ("owner", "admin"):
         response = create(client, headers, role=role, login=f"x-{role}")
         assert (response.status_code, detail(response)["code"]) == (403, "forbidden")

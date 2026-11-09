@@ -89,6 +89,7 @@ def claim(db: Session, limit: int = 20, now: datetime | None = None) -> list[Not
             Notification.next_attempt_at <= now,
         )
         .values(failed_at=now, last_error="max_attempts")
+        .execution_options(synchronize_session="fetch")
     )
     ids = db.scalars(
         select(Notification.id)
@@ -114,6 +115,7 @@ def claim(db: Session, limit: int = 20, now: datetime | None = None) -> list[Not
                 next_attempt_at=now + timedelta(seconds=LEASE_SECONDS),
                 attempts=Notification.attempts + 1,
             )
+            .execution_options(synchronize_session="fetch")
         )
         if result.rowcount == 1:
             claimed.append(notification_id)
@@ -181,6 +183,7 @@ def cleanup(db: Session, now: datetime | None = None) -> int:
             Notification.created_at < border,
             (Notification.sent_at.is_not(None)) | (Notification.failed_at.is_not(None)),
         )
+        .execution_options(synchronize_session="fetch")
     )
     db.commit()
     return result.rowcount

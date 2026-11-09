@@ -21,6 +21,11 @@ def all_notifications(db):
     return db.scalars(select(Notification).order_by(Notification.id)).all()
 
 
+def request_notifications(db):
+    """Уведомления по заявкам: подтверждение игрового ID при подготовке игрока не в счёт."""
+    return [n for n in all_notifications(db) if n.kind != "account"]
+
+
 def claim(client, bot_headers, limit=20):
     r = client.post("/bot/v1/notifications/claim", params={"limit": limit}, headers=bot_headers)
     assert r.status_code == 200, r.text
@@ -33,14 +38,14 @@ def claim(client, bot_headers, limit=20):
 def test_taking_into_work_does_not_notify(client, db, auth, pending_deposit):
     headers, _ = auth("operator", "op1")
     client.post(f"/admin/v1/deposits/{pending_deposit}/take", headers=headers)
-    assert all_notifications(db) == []
+    assert request_notifications(db) == []
 
 
 def test_completed_deposit_notifies_player(client, db, auth, pending_deposit):
     headers, _ = auth("operator", "op1")
     client.post(f"/admin/v1/deposits/{pending_deposit}/take", headers=headers)
     client.post(f"/admin/v1/deposits/{pending_deposit}/complete", headers=headers)
-    (n,) = all_notifications(db)
+    (n,) = request_notifications(db)
     assert (n.kind, n.telegram_id) == ("deposit", 1)
     assert n.payload == {
         "id": pending_deposit, "status": "completed", "amount": 5000,
@@ -54,7 +59,7 @@ def test_rejected_deposit_carries_reason(client, db, auth, pending_deposit):
     client.post(
         f"/admin/v1/deposits/{pending_deposit}/reject", json={"reason": "Чек не читается"}, headers=headers
     )
-    (n,) = all_notifications(db)
+    (n,) = request_notifications(db)
     assert n.payload["status"] == "rejected" and n.payload["reason"] == "Чек не читается"
 
 
@@ -62,7 +67,7 @@ def test_withdrawal_notifications(client, db, auth, pending_withdrawal):
     headers, _ = auth("operator", "op1")
     client.post(f"/admin/v1/withdrawals/{pending_withdrawal}/take", headers=headers)
     client.post(f"/admin/v1/withdrawals/{pending_withdrawal}/complete", headers=headers)
-    (n,) = all_notifications(db)
+    (n,) = request_notifications(db)
     assert (n.kind, n.telegram_id) == ("withdrawal", 2)
     assert n.payload["status"] == "completed" and n.payload["payout_amount"] == 7000
 
@@ -70,7 +75,7 @@ def test_withdrawal_notifications(client, db, auth, pending_withdrawal):
 def test_failed_transition_creates_no_notification(client, db, auth, pending_deposit):
     headers, _ = auth("operator", "op1")
     client.post(f"/admin/v1/deposits/{pending_deposit}/complete", headers=headers)  # 409: не взята
-    assert all_notifications(db) == []
+    assert request_notifications(db) == []
 
 
 def test_expired_deposit_notifies(db, provider):
@@ -79,7 +84,7 @@ def test_expired_deposit_notifies(db, provider):
         db, telegram_id=1, method="fiat", amount=5000, idempotency_key="key-00000001"
     )
     deposits.expire_overdue(db, now=datetime.now(timezone.utc) + timedelta(minutes=30))
-    (n,) = all_notifications(db)
+    (n,) = request_notifications(db)
     assert n.payload["status"] == "expired" and n.payload["id"] == request.id
 
 
@@ -89,20 +94,20 @@ def test_player_cancel_does_not_notify(client, db, bot_headers, provider):
         db, telegram_id=1, method="fiat", amount=5000, idempotency_key="key-00000001"
     )
     client.post(f"/bot/v1/users/1/deposits/{request.id}/cancel", headers=bot_headers)
-    assert all_notifications(db) == []
+    assert request_notifications(db) == []
 
 
 def test_account_decisions_notify(client, db, auth, newcomer):  # noqa: F811
     headers, _ = auth("operator", "op1")
     client.post(f"/admin/v1/players/{newcomer}/approve", headers=headers)
-    (n,) = all_notifications(db)
+    (n,) = request_notifications(db)
     assert (n.kind, n.telegram_id, n.payload["status"]) == ("account", 10, "approved")
 
 
 def test_account_rejection_carries_reason(client, db, auth, newcomer):  # noqa: F811
     headers, _ = auth("operator", "op1")
     client.post(f"/admin/v1/players/{newcomer}/reject", json={"reason": "Вас нет в клубе"}, headers=headers)
-    (n,) = all_notifications(db)
+    (n,) = request_notifications(db)
     assert n.payload == {"status": "rejected", "reason": "Вас нет в клубе"}
 
 
@@ -114,7 +119,7 @@ def test_unblock_notifies(client, db, auth, newcomer):  # noqa: F811
     db.commit()
     headers, _ = auth("operator", "op1")
     client.post(f"/admin/v1/players/{newcomer}/unblock", headers=headers)
-    (n,) = all_notifications(db)
+    (n,) = request_notifications(db)
     assert n.payload["status"] == "unblocked"
 
 
@@ -122,7 +127,7 @@ def test_payload_has_no_requisites_or_secrets(client, db, auth, pending_deposit)
     headers, _ = auth("operator", "op1")
     client.post(f"/admin/v1/deposits/{pending_deposit}/take", headers=headers)
     client.post(f"/admin/v1/deposits/{pending_deposit}/complete", headers=headers)
-    dump = str([n.payload for n in all_notifications(db)])
+    dump = str([n.payload for n in request_notifications(db)])
     assert "Тестовый банк" not in dump and "payment_details" not in dump and "token" not in dump.lower()
 
 

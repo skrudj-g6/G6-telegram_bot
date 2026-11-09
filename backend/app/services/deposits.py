@@ -149,6 +149,7 @@ def _expire_one(db: Session, request_id: int, now: datetime) -> bool:
             DepositRequest.expires_at <= now,
         )
         .values(status=DepositStatus.EXPIRED)
+        .execution_options(synchronize_session="fetch")
     )
     if result.rowcount == 0:
         db.rollback()
@@ -393,6 +394,7 @@ def attach_receipt(
             receipt_size=len(data),
             receipt_uploaded_at=now,
         )
+        .execution_options(synchronize_session="fetch")
     )
     if result.rowcount == 0:
         # Время вышло или заявку отменили между проверкой и записью: файл не нужен.
