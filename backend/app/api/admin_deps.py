@@ -2,6 +2,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.permissions import has_permission
 from app.db.session import get_db
 from app.models import StaffUser
@@ -11,8 +12,11 @@ _bearer = HTTPBearer(auto_error=False)
 
 
 def client_ip(request: Request) -> str | None:
-    # Прокси пока нет (домена нет, Q-16): берём адрес соединения. За обратным прокси
-    # его нужно будет заменить на проверенный заголовок.
+    """Адрес сотрудника для аудита. За доверенным nginx это X-Real-IP (Q-52), иначе адрес соединения."""
+    if get_settings().trust_proxy_headers:
+        forwarded = request.headers.get("x-real-ip", "").strip()
+        if forwarded and len(forwarded) <= 45:
+            return forwarded
     return request.client.host if request.client else None
 
 

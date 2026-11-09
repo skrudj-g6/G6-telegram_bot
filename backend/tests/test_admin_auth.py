@@ -188,3 +188,17 @@ def test_bot_endpoints_do_not_accept_staff_token_and_vice_versa(client, auth, bo
     headers, _ = auth("owner", "own1")
     assert client.get("/bot/v1/settings/limits", headers=headers).status_code == 401
     assert client.get("/admin/v1/auth/me", headers=bot_headers).status_code == 401
+
+
+def test_client_ip_uses_real_ip_header_only_when_proxy_is_trusted(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.api import admin_deps
+
+    request = SimpleNamespace(client=SimpleNamespace(host="172.18.0.5"), headers={"x-real-ip": "203.0.113.7"})
+    monkeypatch.setattr(admin_deps, "get_settings", lambda: SimpleNamespace(trust_proxy_headers=False))
+    assert admin_deps.client_ip(request) == "172.18.0.5"
+    monkeypatch.setattr(admin_deps, "get_settings", lambda: SimpleNamespace(trust_proxy_headers=True))
+    assert admin_deps.client_ip(request) == "203.0.113.7"
+    request.headers = {}
+    assert admin_deps.client_ip(request) == "172.18.0.5"

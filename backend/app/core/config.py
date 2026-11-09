@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     bot_service_token: str
     # Секрет подписи access-токенов сотрудников (D-4). Только из ENV, минимум 32 символа.
     jwt_secret: str
+    # За nginx из compose адрес сотрудника приходит в X-Real-IP (Q-52). Включать только когда
+    # backend доступен лишь через доверенный прокси.
+    trust_proxy_headers: bool = False
     access_token_minutes: int = 15
     refresh_token_days: int = 7
     # Код клуба в покерном приложении (ТЗ §2).

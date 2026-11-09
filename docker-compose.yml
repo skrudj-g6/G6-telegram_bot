@@ -29,6 +29,8 @@ services:
       BOT_SERVICE_TOKEN: ${BOT_SERVICE_TOKEN:?задайте BOT_SERVICE_TOKEN в .env}
       JWT_SECRET: ${JWT_SECRET:?задайте JWT_SECRET в .env (минимум 32 символа)}
       RECEIPTS_DIR: /data/receipts
+      # Панель ходит через nginx, он передаёт адрес сотрудника в X-Real-IP (Q-52).
+      TRUST_PROXY_HEADERS: "true"
       RATE_SOURCE: ${RATE_SOURCE:-coingecko}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     volumes:
