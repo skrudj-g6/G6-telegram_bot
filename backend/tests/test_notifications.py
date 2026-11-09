@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.models import Notification, User
 from app.services import deposits, notifications
@@ -24,6 +24,12 @@ def all_notifications(db):
 def request_notifications(db):
     """Уведомления по заявкам: подтверждение игрового ID при подготовке игрока не в счёт."""
     return [n for n in all_notifications(db) if n.kind != "account"]
+
+
+def forget_account_notifications(db):
+    """Подготовка игрока ставит в очередь «вас приняли»; тестам очереди заявок она мешает."""
+    db.execute(delete(Notification).where(Notification.kind == "account"))
+    db.commit()
 
 
 def claim(client, bot_headers, limit=20):
@@ -100,14 +106,14 @@ def test_player_cancel_does_not_notify(client, db, bot_headers, provider):
 def test_account_decisions_notify(client, db, auth, newcomer):  # noqa: F811
     headers, _ = auth("operator", "op1")
     client.post(f"/admin/v1/players/{newcomer}/approve", headers=headers)
-    (n,) = request_notifications(db)
+    (n,) = all_notifications(db)
     assert (n.kind, n.telegram_id, n.payload["status"]) == ("account", 10, "approved")
 
 
 def test_account_rejection_carries_reason(client, db, auth, newcomer):  # noqa: F811
     headers, _ = auth("operator", "op1")
     client.post(f"/admin/v1/players/{newcomer}/reject", json={"reason": "Вас нет в клубе"}, headers=headers)
-    (n,) = request_notifications(db)
+    (n,) = all_notifications(db)
     assert n.payload == {"status": "rejected", "reason": "Вас нет в клубе"}
 
 
@@ -119,7 +125,7 @@ def test_unblock_notifies(client, db, auth, newcomer):  # noqa: F811
     db.commit()
     headers, _ = auth("operator", "op1")
     client.post(f"/admin/v1/players/{newcomer}/unblock", headers=headers)
-    (n,) = request_notifications(db)
+    (n,) = all_notifications(db)
     assert n.payload["status"] == "unblocked"
 
 
@@ -143,6 +149,7 @@ def test_endpoints_require_service_token(client, auth, pending_deposit):
 
 
 def test_claim_returns_items_once_then_after_lease(client, db, auth, bot_headers, pending_deposit):
+    forget_account_notifications(db)
     headers, _ = auth("operator", "op1")
     client.post(f"/admin/v1/deposits/{pending_deposit}/take", headers=headers)
     client.post(f"/admin/v1/deposits/{pending_deposit}/complete", headers=headers)
@@ -156,6 +163,7 @@ def test_claim_returns_items_once_then_after_lease(client, db, auth, bot_headers
 
 
 def test_sent_notification_is_not_returned_again(client, db, auth, bot_headers, pending_deposit):
+    forget_account_notifications(db)
     headers, _ = auth("operator", "op1")
     client.post(f"/admin/v1/deposits/{pending_deposit}/take", headers=headers)
     client.post(f"/admin/v1/deposits/{pending_deposit}/complete", headers=headers)
